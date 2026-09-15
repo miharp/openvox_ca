@@ -8,16 +8,43 @@ Check, extend, and distribute the OpenVox CA certificate without reissuing agent
 
 ## Status
 
-Early development. Nothing in this repository is ready for use yet. The plans and tasks described below
-are the intended interface and will appear as the phases complete.
+Early development. The read-only `openvox_ca::check` plan works. The extend and distribute plans
+described below are the intended interface and will appear as the work progresses.
 
 The module is not on the Forge. To try a release, pin a git tag in your Puppetfile:
 
 ```ruby
 mod 'openvox_ca',
   git: 'https://github.com/miharp/openvox_ca.git',
-  ref: 'v0.0.1'
+  ref: 'v0.1.0'
 ```
+
+## Usage
+
+Report certificate expiry for the CA host and, optionally, other hosts:
+
+```console
+bolt plan run openvox_ca::check ca=puppet.example.com targets=agents
+```
+
+The plan runs `openvox_ca::check_ca` on the CA host and `openvox_ca::check_host_cert` on every other
+target, prints one line per certificate or CRL sorted by days left, and returns the raw reports.
+Anything expiring within `warn_days` (default 90) is marked `warn`; anything already expired is
+marked `expired`. The tasks resolve file locations through the target's own `puppet config print`, so
+run them with enough privilege to read the CA directory on the CA host and the SSL directory
+elsewhere, for example with `--run-as root`.
+
+```text
+STATUS   HOST                         KIND           EXPIRES      DAYS  SUBJECT
+ok       puppet.example.com           ca_cert        2031-09-12   1823  /CN=Puppet CA: puppet.example.com
+ok       puppet.example.com           crl            2031-09-12   1823  /CN=Puppet CA: puppet.example.com
+ok       agent01.example.com          host_cert      2031-09-12   1823  /CN=agent01.example.com
+ok       agent01.example.com          local_ca_copy  2031-09-12   1823  /CN=Puppet CA: puppet.example.com
+```
+
+The CA report also says which layout the bundle has (`single`, or `intermediate` for the root plus
+signing certificate pair) and lists any CA certificate whose private key is not on disk, which
+means the CA was issued externally and cannot be extended here.
 
 ## What it will do
 
