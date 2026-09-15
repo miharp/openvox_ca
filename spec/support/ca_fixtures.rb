@@ -45,11 +45,11 @@ module CaFixtures
   module_function
 
   # A CA whose bundle holds a single self-signed certificate.
-  def single_ca(dir = Dir.mktmpdir('openvox_ca_single'), ca_days: 365 * 15, host_days: 365 * 5, certname: 'puppet.example.com')
+  def single_ca(dir = Dir.mktmpdir('openvox_ca_single'), ca_days: 365 * 15, host_days: 365 * 5, certname: 'puppet.example.com', revoked: [])
     layout = layout_for(dir, certname)
     ca_key = OpenSSL::PKey::RSA.new(2048)
     ca_cert = self_signed(ca_key, 'Puppet CA: puppet.example.com', ca_days, serial: 1)
-    ca_crl = crl_for(ca_cert, ca_key, ca_days)
+    ca_crl = crl_for(ca_cert, ca_key, ca_days, revoked: revoked)
     host_key, host_cert = host(ca_cert, ca_key, certname, host_days, serial: 2)
 
     write(layout.cacert, ca_cert.to_pem)
@@ -65,14 +65,14 @@ module CaFixtures
 
   # The default layout: an intermediate signing CA issued by a root, with the
   # bundle ordered intermediate first, root second, and both keys on disk.
-  def intermediate_ca(dir = Dir.mktmpdir('openvox_ca_intermediate'), ca_days: 365 * 15, host_days: 365 * 5, certname: 'puppet.example.com', keep_root_key: true)
+  def intermediate_ca(dir = Dir.mktmpdir('openvox_ca_intermediate'), ca_days: 365 * 15, host_days: 365 * 5, certname: 'puppet.example.com', keep_root_key: true, revoked: [])
     layout = layout_for(dir, certname)
     root_key = OpenSSL::PKey::RSA.new(2048)
     root_cert = self_signed(root_key, 'Puppet Root CA: 0123456789abcdef', ca_days, serial: 1)
     root_crl = crl_for(root_cert, root_key, ca_days)
     int_key = OpenSSL::PKey::RSA.new(2048)
     int_cert = signed_ca(int_key, 'Puppet CA: puppet.example.com', root_cert, root_key, ca_days, serial: 2)
-    int_crl = crl_for(int_cert, int_key, ca_days)
+    int_crl = crl_for(int_cert, int_key, ca_days, revoked: revoked)
     host_key, host_cert = host(int_cert, int_key, certname, host_days, serial: 3)
 
     write(layout.cacert, int_cert.to_pem + root_cert.to_pem)

@@ -1,0 +1,37 @@
+{
+  "description": "Re-sign the CA certificate bundle in place with a new validity period, keeping keys, subjects, serials, and extensions. Run on the CA host while OpenVox Server is stopped. Backs up every file it replaces.",
+  "input_method": "stdin",
+  "parameters": {
+    "ttl": {
+      "description": "New lifetime for the CA certificate, in the CA gem's format: a number with an optional y, d, h, m, or s suffix.",
+      "type": "Pattern[/\\A\\d+[ydhms]?\\z/]",
+      "default": "15y"
+    },
+    "crls": {
+      "description": "Which CRLs to re-sign: only expired ones, all of them, or none.",
+      "type": "Enum[expired, all, none]",
+      "default": "expired"
+    },
+    "dry_run": {
+      "description": "Compute and report the change without writing any file.",
+      "type": "Boolean",
+      "default": false
+    },
+    "force": {
+      "description": "Proceed even if puppetserver appears to be running.",
+      "type": "Boolean",
+      "default": false
+    },
+    "section": {
+      "description": "The puppet.conf section to resolve settings from.",
+      "type": "Enum[server, master, main]",
+      "default": "server"
+    }
+  },
+  "files": [
+    "openvox_ca/lib/puppet_x/openvox_ca/inspect.rb",
+    "openvox_ca/lib/puppet_x/openvox_ca/extend.rb",
+    "openvox_ca/lib/puppet_x/openvox_ca/puppet_settings.rb",
+    "openvox_ca/lib/puppet_x/openvox_ca/service.rb"
+  ]
+}

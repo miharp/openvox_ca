@@ -1,0 +1,8 @@
+{
+  "description": "Refresh OpenVoxDB's copies of the CA certificate, host certificate, and key with `puppetdb ssl-setup -f`, when OpenVoxDB is installed on this host. Does not restart the service.",
+  "input_method": "stdin",
+  "parameters": {},
+  "files": [
+    "openvox_ca/lib/puppet_x/openvox_ca/service.rb"
+  ]
+}

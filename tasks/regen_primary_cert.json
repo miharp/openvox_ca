@@ -1,0 +1,20 @@
+{
+  "description": "Replace the CA host's own certificate with one generated offline by `puppetserver ca generate --ca-client`, which carries the pp_cli_auth extension the CA CLI needs. Run while OpenVox Server is stopped. Backs up the files it removes.",
+  "input_method": "stdin",
+  "parameters": {
+    "dns_alt_names": {
+      "description": "Subject alternative names to put on the new certificate. The old certificate's names are not carried over automatically.",
+      "type": "Optional[Array[String[1]]]"
+    },
+    "force": {
+      "description": "Proceed even if puppetserver appears to be running.",
+      "type": "Boolean",
+      "default": false
+    }
+  },
+  "files": [
+    "openvox_ca/lib/puppet_x/openvox_ca/inspect.rb",
+    "openvox_ca/lib/puppet_x/openvox_ca/puppet_settings.rb",
+    "openvox_ca/lib/puppet_x/openvox_ca/service.rb"
+  ]
+}
