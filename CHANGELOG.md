@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.3.1
+
+The check tasks now fail with `openvox_ca/missing-files` when the certificate files are absent,
+which is what a non-root run looks like, instead of reporting `ok` with nothing in it. Found by the
+new lab battery under `contrib/`, which runs 30 positive and negative cases against a disposable
+lab and passes in full.
+
 ## v0.3.0
 
 The `openvox_ca::distribute` plan with the `read_ca_bundle`, `upload_ca`, and `remove_localcacert`

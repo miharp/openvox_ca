@@ -102,6 +102,22 @@ describe PuppetX::OpenvoxCa::Inspect do
     end
   end
 
+  describe 'missing files' do
+    it 'raises a clear error when the certificate files are absent' do
+      settings = { 'hostcert' => '/nonexistent/host.pem', 'localcacert' => '/nonexistent/ca.pem' }
+      expect { inspect.host_report(settings) }.to raise_error(described_class::MissingFiles, %r{--run-as root})
+      expect { inspect.ca_report({ 'cacert' => '/nonexistent/ca_crt.pem' }) }.to raise_error(described_class::MissingFiles)
+    end
+
+    it 'treats a missing CA key as an external CA rather than missing files' do
+      layout = CaFixtures.single_ca
+      File.delete(layout.cakey)
+      report = inspect.ca_report(layout.settings)
+      expect(report['external_ca_subjects']).to eq(['/CN=Puppet CA: puppet.example.com'])
+      FileUtils.rm_rf(layout.dir)
+    end
+  end
+
   describe '.overall_status' do
     it 'ranks expired over warn over ok' do
       expect(inspect.overall_status([{ 'status' => 'ok' }, { 'status' => 'warn' }])).to eq('warn')

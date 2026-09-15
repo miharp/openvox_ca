@@ -117,6 +117,7 @@ module PuppetX
       # Full report for a CA host. `settings` holds the resolved Puppet settings
       # (cacert, cakey, rootkey, cacrl, cadir, localcacert, hostcert, hostcrl).
       def ca_report(settings, warn_days: 90, now: Time.now)
+        require_files!(settings, %w[cacert])
         keys = keys([settings['cakey'], settings['rootkey']])
         items = []
         items.concat(bundle_items(settings['cacert'], kind: 'ca_cert', warn_days: warn_days, keys: keys, now: now))
@@ -147,7 +148,20 @@ module PuppetX
         }
       end
 
+      # Raises when the files a report needs are absent, which usually means
+      # the settings were resolved as the wrong user: a non-root
+      # `puppet config print` points at that user's own confdir.
+      def require_files!(settings, names)
+        missing = names.map { |n| settings[n] }.compact.reject { |p| File.exist?(p) }
+        return if missing.empty?
+
+        raise MissingFiles, "Certificate files not found: #{missing.join(', ')}. If they exist, run the task with enough privilege to see them (for example --run-as root)."
+      end
+
+      class MissingFiles < StandardError; end
+
       def host_items(settings, warn_days:, now:)
+        require_files!(settings, %w[hostcert localcacert])
         items = []
         items.concat(bundle_items(settings['hostcert'], kind: 'host_cert', warn_days: warn_days, now: now))
         items.concat(bundle_items(settings['localcacert'], kind: 'local_ca_copy', warn_days: warn_days, now: now))

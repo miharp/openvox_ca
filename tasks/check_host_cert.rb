@@ -13,6 +13,9 @@ begin
   report = PuppetX::OpenvoxCa::Inspect.host_report(settings, warn_days: params.fetch('warn_days', 90))
   report['certname'] = settings['certname']
   puts JSON.generate(report)
+rescue PuppetX::OpenvoxCa::Inspect::MissingFiles => e
+  puts JSON.generate({ '_error' => { 'msg' => e.message, 'kind' => 'openvox_ca/missing-files', 'details' => {} } })
+  exit 1
 rescue StandardError => e
   puts JSON.generate({ '_error' => { 'msg' => e.message, 'kind' => 'openvox_ca/check_host_cert', 'details' => {} } })
   exit 1

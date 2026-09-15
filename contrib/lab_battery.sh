@@ -98,9 +98,16 @@ t_EXT_10() { local r; r=$(task openvox_ca::extend_ca --targets "$CA_TARGET")
 t_EXT_11() { local before r rc; mv "$CADIR/ca_key.pem" "$WORK/ca_key.pem"; before=$(sums); r=$(plan openvox_ca::extend ca="$CA_TARGET" force=true); rc=$?; mv "$WORK/ca_key.pem" "$CADIR/ca_key.pem"
   [ $rc -ne 0 ] && [ "$(jq -r .kind <<<"$r")" = openvox_ca/external-ca ] && [ "$(sums)" = "$before" ] && [ "$(systemctl is-active puppetserver)" = active ] \
   && pass EXT-11 || fail EXT-11 "missing CA key: kind=$(jq -r .kind <<<"$r"), server $(systemctl is-active puppetserver)"; }
-t_EXT_12() { local r; cp -p "$CADIR/ca_crt.pem" "$WORK/ca_crt.pem"; cat "$HOSTCERT" >> "$CADIR/ca_crt.pem"
+t_EXT_12() { local r n; cp -p "$CADIR/ca_crt.pem" "$WORK/ca_crt.pem"; n=$(/usr/bin/grep -c "BEGIN CERTIFICATE" "$CADIR/ca_crt.pem")
+  while [ "$(/usr/bin/grep -c "BEGIN CERTIFICATE" "$CADIR/ca_crt.pem")" -lt 3 ]; do cat "$HOSTCERT" >> "$CADIR/ca_crt.pem"; done
   r=$(task openvox_ca::extend_ca --targets "$CA_TARGET" force=true dry_run=true); cp -p "$WORK/ca_crt.pem" "$CADIR/ca_crt.pem"
-  jq -r '.items[0].value._error.msg' <<<"$r" | /usr/bin/grep -q "holds 3 certificates" && pass EXT-12 || fail EXT-12 "three-certificate bundle not refused"; }
+  jq -r '.items[0].value._error.msg' <<<"$r" | /usr/bin/grep -q "holds 3 certificates" && pass EXT-12 || fail EXT-12 "three-certificate bundle not refused (started with $n): $(jq -r '.items[0].value._error.msg' <<<"$r")"; }
+t_EXT_16() { local r before; cp -p "$CADIR/ca_crt.pem" "$WORK/ca_crt.pem"; before=$(sums)
+  [ "$(/usr/bin/grep -c "BEGIN CERTIFICATE" "$CADIR/ca_crt.pem")" -eq 1 ] || { pass "EXT-16 (skipped: bundle is not single-layout)"; return; }
+  cat "$HOSTCERT" >> "$CADIR/ca_crt.pem"
+  r=$(task openvox_ca::extend_ca --targets "$CA_TARGET" force=true); cp -p "$WORK/ca_crt.pem" "$CADIR/ca_crt.pem"
+  jq -r '.items[0].value._error.msg' <<<"$r" | /usr/bin/grep -q "No private key on disk for /CN=$CERTNAME" && [ "$(sums)" = "$before" ] \
+  && pass EXT-16 || fail EXT-16 "foreign certificate in the bundle not refused as external: $(jq -r '.items[0].value._error.msg' <<<"$r")"; }
 t_EXT_13() { local r sans; r=$(plan openvox_ca::extend ca="$CA_TARGET" force=true regen_primary_cert=true)
   sans=$(openssl x509 -in "$HOSTCERT" -noout -ext subjectAltName | tail -1)
   echo "$sans" | /usr/bin/grep -q "DNS:$CERTNAME" && ! echo "$sans" | /usr/bin/grep -q "DNS:puppet," \
@@ -115,8 +122,12 @@ t_EXT_15() { local r; r=$(task openvox_ca::regen_primary_cert --targets "$CA_TAR
 # ---------------------------------------------------------------- DIST
 t_DIST_01() { local r; r=$(plan openvox_ca::distribute ca="$CA_TARGET" targets="$AGENTS" $RUN_AS)
   [ "$(jq "[.[] | select(.status==\"changed\")] | length" <<<"$r")" = 2 ] && agents_ok && pass DIST-01 || fail DIST-01 "refetch on healthy agents"; }
-t_DIST_02() { local t1 t2 r; t1=$(unit_started puppet "$AGENT1"); r=$(plan openvox_ca::distribute ca="$CA_TARGET" targets="$AGENTS" strategy=upload $RUN_AS); t2=$(unit_started puppet "$AGENT1")
-  [ "$(jq "[.[] | select(.written|length==2)] | length" <<<"$r")" = 2 ] && [ "$t1" != "$t2" ] && agents_ok && pass DIST-02 || fail DIST-02 "upload: written or agent restart missing"; }
+t_DIST_02() { local t1 t2 r; cmd "systemctl start puppet" "$AGENTS" >/dev/null; sleep 2; t1=$(unit_started puppet "$AGENT1")
+  r=$(plan openvox_ca::distribute ca="$CA_TARGET" targets="$AGENTS" strategy=upload $RUN_AS); t2=$(unit_started puppet "$AGENT1")
+  # A freshly started agent service runs immediately; stop it and wait for
+  # its run lock to clear before running the agent by hand.
+  cmd "systemctl stop puppet; for i in \$(seq 1 30); do [ -e \$(/opt/puppetlabs/bin/puppet config print agent_catalog_run_lockfile) ] || break; sleep 2; done" "$AGENTS" >/dev/null
+  [ "$(jq "[.[] | select(.written|length==2)] | length" <<<"$r")" = 2 ] && [ "$t1" != "$t2" ] && agents_ok && pass DIST-02 || fail DIST-02 "upload: written=$(jq -c 'map_values(.written|length)' <<<"$r") restart $t1 -> $t2"; }
 t_DIST_03() { local expired; expired=$WORK/expired_ca.pem
   /opt/puppetlabs/puppet/bin/ruby -ropenssl -e 'k=OpenSSL::PKey::RSA.new(2048); c=OpenSSL::X509::Certificate.new; c.version=2; c.serial=1; c.subject=c.issuer=OpenSSL::X509::Name.new([["CN","Puppet CA: expired"]]); c.public_key=k.public_key; c.not_before=Time.now-864000; c.not_after=Time.now-86400; ef=OpenSSL::X509::ExtensionFactory.new; ef.subject_certificate=ef.issuer_certificate=c; c.add_extension(ef.create_extension("basicConstraints","CA:TRUE",true)); c.sign(k,OpenSSL::Digest.new("SHA256")); File.write(ARGV[0], c.to_pem)' "$expired"
   bolt file upload "$expired" "$LOCALCACERT" --targets "$AGENTS" $RUN_AS >/dev/null 2>&1
@@ -136,12 +147,20 @@ t_DIST_07() { local rc; plan openvox_ca::distribute ca="$CA_TARGET" targets="$AG
 
 # ---------------------------------------------------------------- E2E
 t_E2E_01() { local r
-  plan openvox_ca::extend ca="$CA_TARGET" force=true ttl=1 crls=all >/dev/null; sleep 3
-  r=$(plan openvox_ca::check ca="$CA_TARGET")
-  [ "$(jq -r .ca.status <<<"$r")" = expired ] || { fail E2E-01 "CA not expired after ttl=1"; return; }
-  if agents_ok >/dev/null 2>&1; then fail E2E-01 "agents still ran against an expired CA"; return; fi
+  # Agents trust their own copy of the CA certificate, so an expired CA only
+  # bites once their copies have expired too. In the field every copy is the
+  # same certificate and expires at the same moment; here the short-lived
+  # certificate has to be pushed to the agents to get the same effect.
+  plan openvox_ca::extend ca="$CA_TARGET" force=true ttl=1 crls=all >/dev/null
+  plan openvox_ca::distribute ca="$CA_TARGET" targets="$AGENTS" strategy=upload $RUN_AS >/dev/null; sleep 3
+  r=$(plan openvox_ca::check ca="$CA_TARGET" targets="$AGENTS" $RUN_AS)
+  [ "$(jq -r .ca.status <<<"$r")" = expired ] && [ "$(jq -r "[.hosts[].status] | unique | .[]" <<<"$r")" = expired ] || { fail E2E-01 "CA or agent copies not expired after ttl=1 plus upload"; return; }
+  if agents_ok >/dev/null 2>&1; then fail E2E-01 "agents still ran with an expired CA everywhere"; return; fi
   r=$(plan openvox_ca::extend ca="$CA_TARGET" ttl=15y)
-  [ "$(jq '[.extend.crls[] | select(.resigned)] | length' <<<"$r")" -ge 2 ] || { fail E2E-01 "expired CRLs were not re-signed on recovery"; return; }
+  # OpenVox Server renews its own CRL when it is within 30 days of expiry, so
+  # by the time recovery runs the server may already have replaced it. Either
+  # way the CRLs must be valid afterwards.
+  [ "$(jq '[.after.items[] | select(.kind=="crl") | .status] | unique | .[]' <<<"$r")" = '"ok"' ] || { fail E2E-01 "CRLs not valid after recovery: $(jq -c '[.after.items[] | select(.kind=="crl") | .status]' <<<"$r")"; return; }
   plan openvox_ca::distribute ca="$CA_TARGET" targets="$AGENTS" $RUN_AS >/dev/null
   agents_ok && [ "$(plan openvox_ca::check ca="$CA_TARGET" targets="$AGENTS" $RUN_AS | jq -r .ca.status)" = ok ] \
   && curl -sSf --cert "$HOSTCERT" --key "$(puppet config print --section server hostprivkey)" --cacert "$LOCALCACERT" "https://$CERTNAME:8081/pdb/meta/v1/version" >/dev/null \
@@ -154,7 +173,7 @@ t_RB_01() { local b
   agents_ok && pass RB-01 || fail RB-01 "restoring the oldest backup broke the deployment"
   plan openvox_ca::extend ca="$CA_TARGET" force=true ttl=15y >/dev/null; plan openvox_ca::distribute ca="$CA_TARGET" targets="$AGENTS" $RUN_AS >/dev/null; }
 
-ALL=(CHK_01 CHK_02 CHK_03 CHK_04 CHK_05 EXT_01 EXT_02 EXT_03 EXT_04 EXT_05 EXT_06 EXT_07 EXT_08 EXT_09 EXT_10 EXT_11 EXT_12 EXT_13 EXT_14 EXT_15 DIST_01 DIST_02 DIST_03 DIST_04 DIST_05 DIST_06 DIST_07 E2E_01 RB_01)
+ALL=(CHK_01 CHK_02 CHK_03 CHK_04 CHK_05 EXT_01 EXT_02 EXT_03 EXT_04 EXT_05 EXT_06 EXT_07 EXT_08 EXT_09 EXT_10 EXT_11 EXT_12 EXT_16 EXT_13 EXT_14 EXT_15 DIST_01 DIST_02 DIST_03 DIST_04 DIST_05 DIST_06 DIST_07 E2E_01 RB_01)
 if [ $# -gt 0 ]; then CASES=("${@//-/_}"); else CASES=("${ALL[@]}"); fi
 log "openvox_ca lab battery on $CERTNAME ($(date -u +%FT%TZ)); CA expires $(ca_not_after)"
 for c in "${CASES[@]}"; do log "$c"; "t_$c"; done

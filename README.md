@@ -16,7 +16,7 @@ The module is not on the Forge. To try a release, pin a git tag in your Puppetfi
 ```ruby
 mod 'openvox_ca',
   git: 'https://github.com/miharp/openvox_ca.git',
-  ref: 'v0.3.0'
+  ref: 'v0.3.1'
 ```
 
 ## Usage
@@ -59,7 +59,8 @@ is not on the CA host. Otherwise it:
 2. re-signs every certificate in the CA bundle with the same key, subject, serial, and extensions,
    handling both the single self-signed layout and the root plus intermediate bundle;
 3. re-signs any CRL whose `next_update` has passed (`crls=all` re-signs every CRL, `crls=none` leaves
-   them alone), keeping the revoked entries and incrementing `crlNumber`;
+   them alone), keeping the revoked entries and incrementing `crlNumber`. OpenVox Server also renews
+   its own CRL whenever it is within 30 days of expiry, so this step usually finds nothing to do;
 4. writes the new bundle and CRLs to the CA directory and to the server's own SSL directory, after
    backing each file up as `<file>.<timestamp>.bak` beside the original;
 5. refreshes OpenVoxDB's copies with `puppetdb ssl-setup -f` and restarts it, when it runs on the CA
@@ -74,7 +75,10 @@ over automatically, so pass `dns_alt_names='["puppet","puppet.example.com"]'`; t
 old certificate's names so you can compare.
 
 Agents keep working with their old copy of the CA certificate for as long as it is valid, because
-the signing key has not changed. OpenVox agents also refresh their copy of the CA bundle from the
+the signing key has not changed and each agent validates the server against its own copy, not
+against the certificate the server holds. The reverse is also true: an expired CA on the server
+only breaks an agent once that agent's copy has expired, which in practice is the same moment,
+since every copy is the same certificate. OpenVox agents also refresh their copy of the CA bundle from the
 server once a day by default (`ca_refresh_interval`), so on a healthy deployment the new
 certificate reaches every agent within a day without any further action. Distributing it by hand is
 only needed when the old certificate has already expired, or sooner than a day is required.
@@ -126,7 +130,7 @@ that ships, the extend plan will prefer it and keep its own implementation as a 
 
 ## Testing against a lab
 
-`contrib/lab_battery.sh` runs 29 positive and negative cases against a disposable lab from the CA
+`contrib/lab_battery.sh` runs 30 positive and negative cases against a disposable lab from the CA
 host: the guards and refusals, both extend layouts of behaviour, both distribute strategies, a full
 expire-and-recover cycle, and a rollback from the backups. It rewrites the CA certificate and
 restarts every service, so never point it at a real deployment. See the header of the script for
