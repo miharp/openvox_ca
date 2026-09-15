@@ -17,3 +17,4 @@ Gemfile:
     - /rakelib/
     - /jig.toml
     - /.devcontainer/
+    - /contrib/

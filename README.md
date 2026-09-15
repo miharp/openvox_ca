@@ -124,6 +124,14 @@ The re-signing step itself is also proposed as a `puppetserver ca extend` subcom
 tooling; see [openvoxserver-ca#56](https://github.com/OpenVoxProject/openvoxserver-ca/issues/56). When
 that ships, the extend plan will prefer it and keep its own implementation as a fallback.
 
+## Testing against a lab
+
+`contrib/lab_battery.sh` runs 29 positive and negative cases against a disposable lab from the CA
+host: the guards and refusals, both extend layouts of behaviour, both distribute strategies, a full
+expire-and-recover cycle, and a rollback from the backups. It rewrites the CA certificate and
+restarts every service, so never point it at a real deployment. See the header of the script for
+the variables it takes.
+
 ## Requirements
 
 - OpenVox 8 or 9 on the CA host and on agents.
