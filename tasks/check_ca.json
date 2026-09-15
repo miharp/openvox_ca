@@ -1,0 +1,20 @@
+{
+  "description": "Report the expiry of the CA certificate bundle, the CRLs, and the server's own certificate on the CA host. Read-only.",
+  "input_method": "stdin",
+  "parameters": {
+    "warn_days": {
+      "description": "Flag anything that expires within this many days.",
+      "type": "Integer[0]",
+      "default": 90
+    },
+    "section": {
+      "description": "The puppet.conf section to resolve settings from.",
+      "type": "Enum[server, master, main]",
+      "default": "server"
+    }
+  },
+  "files": [
+    "openvox_ca/lib/puppet_x/openvox_ca/inspect.rb",
+    "openvox_ca/lib/puppet_x/openvox_ca/puppet_settings.rb"
+  ]
+}

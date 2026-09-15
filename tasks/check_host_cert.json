@@ -1,0 +1,15 @@
+{
+  "description": "Report the expiry of this host's certificate, its copy of the CA bundle, and its copy of the CRL. Read-only.",
+  "input_method": "stdin",
+  "parameters": {
+    "warn_days": {
+      "description": "Flag anything that expires within this many days.",
+      "type": "Integer[0]",
+      "default": 90
+    }
+  },
+  "files": [
+    "openvox_ca/lib/puppet_x/openvox_ca/inspect.rb",
+    "openvox_ca/lib/puppet_x/openvox_ca/puppet_settings.rb"
+  ]
+}
