@@ -1,0 +1,19 @@
+---
+# Module-specific overrides for voxpupuli/modulesync_config. The module is
+# incubating outside the Vox Pupuli org, so the release workflows that depend
+# on org secrets (Forge credentials, pccibot keys) are dropped here and a
+# GitHub-release-only workflow is kept by hand. Remove these three deletions
+# when the module moves into an org that has those secrets.
+Gemfile:
+  openvox_version: ['>= 8', '< 10']
+.github/workflows/release.yml:
+  delete: true
+.github/workflows/prepare_release.yml:
+  delete: true
+.github/workflows/create_tag.yml:
+  delete: true
+.pmtignore:
+  paths:
+    - /rakelib/
+    - /jig.toml
+    - /.devcontainer/

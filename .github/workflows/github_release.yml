@@ -1,0 +1,43 @@
+---
+# Not managed by modulesync. The module is not published to the Forge while it
+# incubates outside an org, so this builds the module tarball on a version tag
+# and attaches it to a GitHub release. Replace with the modulesync-managed
+# release.yml when the module moves into an org with Forge credentials.
+
+name: GitHub release
+
+# yamllint disable-line rule:truthy
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and attach the module tarball
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+        env:
+          BUNDLE_WITHOUT: development:system_tests
+      - name: Check that the tag matches metadata.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(ruby -rjson -e 'puts JSON.parse(File.read("metadata.json"))["version"]')"
+          if [ "$tag" != "$version" ]; then
+            echo "Tag v$tag does not match metadata.json version $version" >&2
+            exit 1
+          fi
+      - name: Build the module tarball
+        run: bundle exec rake module:build
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" pkg/*.tar.gz --generate-notes --title "$GITHUB_REF_NAME"
