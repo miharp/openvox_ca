@@ -1,6 +1,6 @@
 {
   "name": "miharp-openvox_ca",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "Michael Harp",
   "license": "Apache-2.0",
   "summary": "Check, extend, and distribute the OpenVox CA certificate without reissuing agent certificates",

@@ -1,0 +1,15 @@
+{
+  "description": "Return the CA certificate bundle and CRL from the CA host, base64-encoded, for distribution to other hosts. Read-only.",
+  "input_method": "stdin",
+  "parameters": {
+    "section": {
+      "description": "The puppet.conf section to resolve settings from.",
+      "type": "Enum[server, master, main]",
+      "default": "server"
+    }
+  },
+  "files": [
+    "openvox_ca/lib/puppet_x/openvox_ca/inspect.rb",
+    "openvox_ca/lib/puppet_x/openvox_ca/puppet_settings.rb"
+  ]
+}

@@ -8,16 +8,15 @@ Check, extend, and distribute the OpenVox CA certificate without reissuing agent
 
 ## Status
 
-Early development. The `openvox_ca::check` and `openvox_ca::extend` plans work and have been exercised
-against a three-node OpenVox 8 lab. The distribute plan described below is the intended interface and
-will appear as the work progresses.
+Early development. The `openvox_ca::check`, `openvox_ca::extend`, and `openvox_ca::distribute` plans work
+and have been exercised against a three-node OpenVox 8 lab and in Beaker acceptance tests.
 
 The module is not on the Forge. To try a release, pin a git tag in your Puppetfile:
 
 ```ruby
 mod 'openvox_ca',
   git: 'https://github.com/miharp/openvox_ca.git',
-  ref: 'v0.2.0'
+  ref: 'v0.3.0'
 ```
 
 ## Usage
@@ -79,6 +78,25 @@ the signing key has not changed. OpenVox agents also refresh their copy of the C
 server once a day by default (`ca_refresh_interval`), so on a healthy deployment the new
 certificate reaches every agent within a day without any further action. Distributing it by hand is
 only needed when the old certificate has already expired, or sooner than a day is required.
+
+### Distribute the new bundle to agents
+
+Usually unnecessary: OpenVox agents refresh their copy of the CA bundle from the server every
+`ca_refresh_interval` (one day by default), so after an extend the new certificate reaches every
+healthy agent within a day. Use this plan when the agents' old copy has already expired, or when a
+day is too long to wait.
+
+```console
+bolt plan run openvox_ca::distribute ca=puppet.example.com targets=agents
+bolt plan run openvox_ca::distribute ca=puppet.example.com targets=agents strategy=upload
+```
+
+`refetch`, the default, moves each agent's `ca.pem` and `crl.pem` aside and runs the agent once in
+no-op mode. An agent with no CA bundle fetches one from the server without needing a valid one, so
+this works even after the old copy has expired. `upload` reads the bundle and CRL from the CA host
+and writes them to each target directly, then restarts the agent service (`restart_agent=false` to
+skip); use it for hosts that cannot reach the server or should not run the agent. Both strategies
+back the old files up beside the originals and finish by printing each host's new CA expiry.
 
 The CA report also says which layout the bundle has (`single`, or `intermediate` for the root plus
 signing certificate pair) and lists any CA certificate whose private key is not on disk, which

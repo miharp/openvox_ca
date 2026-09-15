@@ -1,0 +1,26 @@
+{
+  "description": "Install a CA certificate bundle, and optionally a CRL, into this host's SSL directory, backing up the previous copies. Use when the host's old CA copy has expired and it can no longer fetch a new one itself.",
+  "input_method": "stdin",
+  "parameters": {
+    "bundle": {
+      "description": "The CA certificate bundle, PEM, base64-encoded.",
+      "type": "String[1]"
+    },
+    "crl": {
+      "description": "The CRL, PEM, base64-encoded.",
+      "type": "Optional[String[1]]"
+    },
+    "restart_agent": {
+      "description": "Restart the puppet agent service afterwards so a long-running agent picks up the new bundle.",
+      "type": "Boolean",
+      "default": true
+    }
+  },
+  "files": [
+    "openvox_ca/lib/puppet_x/openvox_ca/inspect.rb",
+    "openvox_ca/lib/puppet_x/openvox_ca/extend.rb",
+    "openvox_ca/lib/puppet_x/openvox_ca/distribute.rb",
+    "openvox_ca/lib/puppet_x/openvox_ca/puppet_settings.rb",
+    "openvox_ca/lib/puppet_x/openvox_ca/service.rb"
+  ]
+}

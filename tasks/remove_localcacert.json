@@ -1,0 +1,17 @@
+{
+  "description": "Move this host's copies of the CA bundle and CRL aside so the agent fetches fresh ones from the server, then optionally trigger a no-op agent run to do so right away. The agent downloads the CA bundle without needing a valid one, so this also works after the old copy has expired.",
+  "input_method": "stdin",
+  "parameters": {
+    "trigger_run": {
+      "description": "Run `puppet agent -t --noop` afterwards so the new bundle is fetched immediately.",
+      "type": "Boolean",
+      "default": true
+    }
+  },
+  "files": [
+    "openvox_ca/lib/puppet_x/openvox_ca/inspect.rb",
+    "openvox_ca/lib/puppet_x/openvox_ca/extend.rb",
+    "openvox_ca/lib/puppet_x/openvox_ca/distribute.rb",
+    "openvox_ca/lib/puppet_x/openvox_ca/puppet_settings.rb"
+  ]
+}

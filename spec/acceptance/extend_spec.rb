@@ -82,4 +82,20 @@ describe 'extending an expired CA' do
     result = shell('/opt/puppetlabs/bin/puppet agent -t --detailed-exitcodes', acceptable_exit_codes: [0, 1, 2, 4, 6])
     expect(result.exit_code).to eq(0).or eq(2)
   end
+
+  it 'refetches the CA bundle after the local copy is removed' do
+    code, report = task('remove_localcacert', { 'trigger_run' => true }, installdir)
+    expect(code).to eq(0)
+    expect(report['fetched']).to be(true)
+    expect(report['backups'].length).to eq(2)
+    expect(report['items'].first['not_after']).to match(%r{^2031-})
+  end
+
+  it 'installs an uploaded bundle' do
+    _code, source = task('read_ca_bundle', {}, installdir)
+    code, report = task('upload_ca', { 'bundle' => source['bundle'], 'crl' => source['crl'], 'restart_agent' => false }, installdir)
+    expect(code).to eq(0)
+    expect(report['written'].length).to eq(2)
+    expect(report['items'].first['subject']).to eq(source['certificates'].first['subject'])
+  end
 end
