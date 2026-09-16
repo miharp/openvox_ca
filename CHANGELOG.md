@@ -9,7 +9,9 @@ and the current CLI answers an unknown action with "Unknown action" plus the who
 code 0, so the probe saw `--ttl` in the usage and chose the gem path on every host; the extend
 task then failed after the plan had already stopped the server. The probe now looks for an
 `extend` entry in the CLI's action list, the stand-in in the unit specs reproduces the real
-CLI's behaviour, and the acceptance suite, which caught this, is green again.
+CLI's behaviour, and the acceptance suite, which caught this, is green again. The lab battery
+passes 31 of 31 on the OpenVox 8 lab, and a forced `implementation=gem` there is refused with the
+server back up afterwards.
 
 The extend plan also starts `puppetserver` again before failing when the extend task refuses or
 fails, instead of leaving the deployment down. The task's writes are backed up first, so the CA
