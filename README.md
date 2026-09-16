@@ -191,6 +191,26 @@ expire-and-recover cycle, and a rollback from the backups. It rewrites the CA ce
 restarts every service, so never point it at a real deployment. See the header of the script for
 the variables it takes.
 
+## Development
+
+Changes reach `main` through pull requests only. A ruleset on `main` requires a pull request, the
+`Puppet / Test suite` check from CI (which gates the static checks, the unit suite, and the Beaker
+acceptance jobs), signed commits, and a merge commit, so the signed and DCO'd commits on the branch
+stay as they are. Squash and rebase merges are disabled because GitHub's rebase merge drops commit
+signatures. Release tags `v*` cannot be moved or deleted.
+
+```console
+git switch -c fix/something
+git commit -S -s          # signed, with a Signed-off-by trailer
+git push -u origin fix/something
+gh pr create --fill
+gh pr merge --auto --merge
+```
+
+A release is a version bump and changelog entry merged the same way, followed by a signed tag on
+`main`: `git tag -s vX.Y.Z && git push origin vX.Y.Z`. The tag push builds the tarball and attaches
+it to a GitHub release. Run the lab battery before tagging anything that touches a plan or task.
+
 ## Requirements
 
 - OpenVox 8 or 9 on the CA host and on agents.
