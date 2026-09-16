@@ -9,7 +9,8 @@ Check, extend, and distribute the OpenVox CA certificate without reissuing agent
 ## Status
 
 Early development. The `openvox_ca::check`, `openvox_ca::extend`, and `openvox_ca::distribute` plans work
-and have been exercised against a three-node OpenVox 8 lab and in Beaker acceptance tests.
+and have been exercised against a three-node lab on OpenVox 8 and on OpenVox 9.0.0-rc1, and in Beaker
+acceptance tests on OpenVox 8.
 
 The module is not on the Forge. To try a release, pin a git tag in your Puppetfile:
 
