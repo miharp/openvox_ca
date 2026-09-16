@@ -208,22 +208,31 @@ module PuppetX
         writes
       end
 
+      # Every file an extend may replace: the bundle and its local copy, the
+      # CRL files, and the host's CRL copy. Only those that exist.
+      def affected_paths(settings)
+        paths = [settings['cacert'], settings['localcacert'], settings['hostcrl']] + crl_paths(settings)
+        paths.compact.uniq.select { |p| File.exist?(p) }
+      end
+
+      # Copies each file to `<file>.<timestamp>.bak` beside the original,
+      # preserving mode and ownership. Returns the backup paths.
+      def backup(paths, now: Time.now)
+        stamp = now.utc.strftime('%Y%m%dT%H%M%SZ')
+        paths.select { |p| File.exist?(p) }.map do |path|
+          backup = "#{path}.#{stamp}.bak"
+          FileUtils.cp(path, backup, preserve: true)
+          backup
+        end
+      end
+
       # Backs up and replaces every affected file. Returns the paths written
       # and the backups made. Existing mode and ownership are preserved.
       def apply(settings, result, now: Time.now)
-        stamp = now.utc.strftime('%Y%m%dT%H%M%SZ')
-        written = []
-        backups = []
-        planned_writes(settings, result).each do |path, content|
-          if File.exist?(path)
-            backup = "#{path}.#{stamp}.bak"
-            FileUtils.cp(path, backup, preserve: true)
-            backups << backup
-          end
-          write_atomically(path, content)
-          written << path
-        end
-        { 'written' => written, 'backups' => backups }
+        writes = planned_writes(settings, result)
+        backups = backup(writes.keys, now: now)
+        writes.each { |path, content| write_atomically(path, content) }
+        { 'written' => writes.keys, 'backups' => backups }
       end
 
       def write_atomically(path, content)

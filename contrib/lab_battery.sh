@@ -62,6 +62,13 @@ t_CHK_04() { local r; r=$(plan openvox_ca::check ca="$CA_TARGET" targets="$AGENT
 t_CHK_05() { local r; r=$(bolt task run openvox_ca::check_host_cert --targets "$AGENT1" --format json 2>/dev/null)
   [ "$(jq -r '.items[0].status' <<<"$r")" = failure ] || [ "$(jq '.items[0].value.items | length' <<<"$r")" != 0 ] \
   && pass CHK-05 || fail CHK-05 "non-root check reported ok with no items (should error or find files)"; }
+t_CHK_06() { local r all
+  # Fresh lab: the audit of the signed directory lists nothing by default (all certificates are ok), counts every one, and issued=all lists them.
+  r=$(plan openvox_ca::check ca="$CA_TARGET" $RUN_AS); all=$(plan openvox_ca::check ca="$CA_TARGET" issued=all $RUN_AS)
+  [ "$(jq '[.ca.items[] | select(.kind=="issued_cert")] | length' <<<"$r")" = 0 ] && [ "$(jq -r .ca.issued.total <<<"$r")" -ge 3 ] \
+  && [ "$(jq '[.ca.items[] | select(.kind=="issued_cert")] | length' <<<"$all")" = "$(jq -r .ca.issued.total <<<"$all")" ] \
+  && [ "$(jq -r ".ca.items[] | select(.kind==\"issued_cert\" and .certname==\"$AGENT1\") | .status" <<<"$all")" = ok ] \
+  && pass CHK-06 || fail CHK-06 "issued certificate audit wrong: $(jq -c '.ca.issued' <<<"$all")"; }
 
 # ---------------------------------------------------------------- EXT
 t_EXT_01() { local before after r; before=$(sums); r=$(plan openvox_ca::extend ca="$CA_TARGET" dry_run=true); after=$(sums)
@@ -173,7 +180,7 @@ t_RB_01() { local b
   agents_ok && pass RB-01 || fail RB-01 "restoring the oldest backup broke the deployment"
   plan openvox_ca::extend ca="$CA_TARGET" force=true ttl=15y >/dev/null; plan openvox_ca::distribute ca="$CA_TARGET" targets="$AGENTS" $RUN_AS >/dev/null; }
 
-ALL=(CHK_01 CHK_02 CHK_03 CHK_04 CHK_05 EXT_01 EXT_02 EXT_03 EXT_04 EXT_05 EXT_06 EXT_07 EXT_08 EXT_09 EXT_10 EXT_11 EXT_12 EXT_16 EXT_13 EXT_14 EXT_15 DIST_01 DIST_02 DIST_03 DIST_04 DIST_05 DIST_06 DIST_07 E2E_01 RB_01)
+ALL=(CHK_01 CHK_02 CHK_03 CHK_04 CHK_05 CHK_06 EXT_01 EXT_02 EXT_03 EXT_04 EXT_05 EXT_06 EXT_07 EXT_08 EXT_09 EXT_10 EXT_11 EXT_12 EXT_16 EXT_13 EXT_14 EXT_15 DIST_01 DIST_02 DIST_03 DIST_04 DIST_05 DIST_06 DIST_07 E2E_01 RB_01)
 if [ $# -gt 0 ]; then CASES=("${@//-/_}"); else CASES=("${ALL[@]}"); fi
 log "openvox_ca lab battery on $CERTNAME ($(date -u +%FT%TZ)); CA expires $(ca_not_after)"
 for c in "${CASES[@]}"; do log "$c"; "t_$c"; done

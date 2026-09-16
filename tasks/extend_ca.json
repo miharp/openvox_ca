@@ -1,5 +1,5 @@
 {
-  "description": "Re-sign the CA certificate bundle in place with a new validity period, keeping keys, subjects, serials, and extensions. Run on the CA host while OpenVox Server is stopped. Backs up every file it replaces.",
+  "description": "Re-sign the CA certificate bundle in place with a new validity period, keeping keys, subjects, serials, and extensions. Uses `puppetserver ca extend` when the CA CLI has it, otherwise the module's own implementation. Run on the CA host while OpenVox Server is stopped. Backs up every file it replaces.",
   "input_method": "stdin",
   "parameters": {
     "ttl": {
@@ -22,6 +22,11 @@
       "type": "Boolean",
       "default": false
     },
+    "implementation": {
+      "description": "Which re-signing implementation to use: `auto` prefers `puppetserver ca extend` when the CA CLI has that subcommand and falls back to the module's own library, `gem` requires the subcommand, `library` never uses it.",
+      "type": "Enum[auto, gem, library]",
+      "default": "auto"
+    },
     "section": {
       "description": "The puppet.conf section to resolve settings from.",
       "type": "Enum[server, master, main]",
@@ -32,6 +37,7 @@
     "openvox_ca/lib/puppet_x/openvox_ca/inspect.rb",
     "openvox_ca/lib/puppet_x/openvox_ca/extend.rb",
     "openvox_ca/lib/puppet_x/openvox_ca/puppet_settings.rb",
-    "openvox_ca/lib/puppet_x/openvox_ca/service.rb"
+    "openvox_ca/lib/puppet_x/openvox_ca/service.rb",
+    "openvox_ca/lib/puppet_x/openvox_ca/ca_cli.rb"
   ]
 }

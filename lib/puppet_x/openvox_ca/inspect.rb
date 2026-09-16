@@ -114,9 +114,55 @@ module PuppetX
         end
       end
 
+      # One report item for a certificate the CA issued, read from the signed
+      # directory. The certname is the file name without its extension, which
+      # is how `puppetserver ca sign` files them.
+      def issued_item(cert, file:, warn_days:, revoked_serials:, now: Time.now)
+        certificate_item(cert, kind: 'issued_cert', file: file, warn_days: warn_days, now: now).merge(
+          'certname' => File.basename(file, '.pem'),
+          'revoked' => revoked_serials.include?(cert.serial.to_s),
+        )
+      end
+
+      # Items for every certificate in the CA's signed directory, in name order.
+      def issued_items(signeddir, warn_days:, revoked_serials: [], now: Time.now)
+        return [] unless signeddir && File.directory?(signeddir)
+
+        Dir.glob(File.join(signeddir, '*.pem')).sort.flat_map do |file|
+          certificates(file).map { |c| issued_item(c, file: file, warn_days: warn_days, revoked_serials: revoked_serials, now: now) }
+        end
+      end
+
+      # Serials revoked by any CRL in the file, as strings, for matching
+      # against `certificate_item` serials.
+      def revoked_serials(path)
+        return [] unless path && File.exist?(path)
+
+        crls(path).flat_map { |crl| crl.revoked.map { |entry| entry.serial.to_s } }
+      end
+
+      # Counts by status over issued-certificate items.
+      def issued_summary(items)
+        {
+          'total' => items.length,
+          'ok' => items.count { |i| i['status'] == 'ok' },
+          'warn' => items.count { |i| i['status'] == 'warn' },
+          'expired' => items.count { |i| i['status'] == 'expired' },
+          'revoked' => items.count { |i| i['revoked'] },
+        }
+      end
+
       # Full report for a CA host. `settings` holds the resolved Puppet settings
-      # (cacert, cakey, rootkey, cacrl, cadir, localcacert, hostcert, hostcrl).
-      def ca_report(settings, warn_days: 90, now: Time.now)
+      # (cacert, cakey, rootkey, cacrl, cadir, signeddir, localcacert, hostcert,
+      # hostcrl).
+      #
+      # `issued` controls the audit of certificates the CA has issued, read
+      # from `signeddir`: :due lists only those expiring within the window or
+      # already expired, :all lists every one, :none skips the directory. The
+      # summary counts under 'issued' always cover the whole directory. The
+      # report's overall status covers only the CA's own files, because an
+      # expiring agent certificate is not a reason to extend the CA.
+      def ca_report(settings, warn_days: 90, issued: :due, now: Time.now)
         require_files!(settings, %w[cacert])
         keys = keys([settings['cakey'], settings['rootkey']])
         items = []
@@ -126,12 +172,22 @@ module PuppetX
         items.concat(crl_items(infra_crl, warn_days: warn_days, now: now)) if settings['cadir']
         items.concat(host_items(settings, warn_days: warn_days, now: now))
         external = items.select { |i| i['kind'] == 'ca_cert' && i['key_present'] == false }.map { |i| i['subject'] }
+        status = overall_status(items)
+
+        summary = nil
+        unless issued.to_sym == :none
+          all_issued = issued_items(settings['signeddir'], warn_days: warn_days, revoked_serials: revoked_serials(settings['cacrl']), now: now)
+          summary = issued_summary(all_issued)
+          items.concat((issued.to_sym == :all) ? all_issued : all_issued.reject { |i| i['status'] == 'ok' })
+        end
+
         {
-          'status' => overall_status(items),
+          'status' => status,
           'warn_days' => warn_days,
           'checked_at' => now.utc.iso8601,
           'layout' => layout_for(items),
           'external_ca_subjects' => external,
+          'issued' => summary,
           'items' => items,
         }
       end

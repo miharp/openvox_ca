@@ -30,13 +30,13 @@ module CaFixtures
 
   # Paths for one fixture, mirroring the settings the tasks read from
   # `puppet config print`.
-  Layout = Struct.new(:dir, :cadir, :cacert, :cakey, :rootkey, :cacrl, :infra_crl,
+  Layout = Struct.new(:dir, :cadir, :cacert, :cakey, :rootkey, :cacrl, :infra_crl, :signeddir,
                       :localcacert, :hostcert, :hostprivkey, :hostcrl, :certname,
                       keyword_init: true) do
     def settings
       {
         'cadir' => cadir, 'cacert' => cacert, 'cakey' => cakey, 'rootkey' => rootkey,
-        'cacrl' => cacrl, 'localcacert' => localcacert, 'hostcert' => hostcert,
+        'cacrl' => cacrl, 'signeddir' => signeddir, 'localcacert' => localcacert, 'hostcert' => hostcert,
         'hostprivkey' => hostprivkey, 'hostcrl' => hostcrl, 'certname' => certname,
       }
     end
@@ -60,6 +60,7 @@ module CaFixtures
     write(layout.hostcert, host_cert.to_pem)
     write(layout.hostprivkey, host_key.to_pem, 0o640)
     write(layout.hostcrl, ca_crl.to_pem)
+    write(File.join(layout.signeddir, "#{certname}.pem"), host_cert.to_pem)
     layout
   end
 
@@ -84,7 +85,26 @@ module CaFixtures
     write(layout.hostcert, host_cert.to_pem)
     write(layout.hostprivkey, host_key.to_pem, 0o640)
     write(layout.hostcrl, int_crl.to_pem + root_crl.to_pem)
+    write(File.join(layout.signeddir, "#{certname}.pem"), host_cert.to_pem)
     layout
+  end
+
+  # Issues a certificate for `certname` from the CA's signing key and files it
+  # in the signed directory the way `puppetserver ca sign` does. Returns the
+  # certificate. With `revoke: true` the serial is also added to the CA CRL.
+  def issue(layout, certname, days: 365 * 5, serial: rand(1000..9999), revoke: false)
+    ca_cert = OpenSSL::X509::Certificate.new(File.read(layout.cacert).scan(%r{-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----}m).first)
+    ca_key = OpenSSL::PKey.read(File.read(layout.cakey))
+    _key, cert = host(ca_cert, ca_key, certname, days, serial: serial)
+    write(File.join(layout.signeddir, "#{certname}.pem"), cert.to_pem)
+    if revoke
+      crls = File.read(layout.cacrl).scan(%r{-----BEGIN X509 CRL-----.*?-----END X509 CRL-----}m).map { |p| OpenSSL::X509::CRL.new(p) }
+      own = crls.shift
+      revoked = own.revoked.map(&:serial) + [serial]
+      fresh = crl_for(ca_cert, ca_key, ((own.next_update - Time.now) / DAY).ceil, revoked: revoked)
+      write(layout.cacrl, ([fresh] + crls).map(&:to_pem).join)
+    end
+    cert
   end
 
   def layout_for(dir, certname)
@@ -94,7 +114,7 @@ module CaFixtures
       dir: dir, cadir: cadir, certname: certname,
       cacert: File.join(cadir, 'ca_crt.pem'), cakey: File.join(cadir, 'ca_key.pem'),
       rootkey: File.join(cadir, 'root_key.pem'), cacrl: File.join(cadir, 'ca_crl.pem'),
-      infra_crl: File.join(cadir, 'infra_crl.pem'),
+      infra_crl: File.join(cadir, 'infra_crl.pem'), signeddir: File.join(cadir, 'signed'),
       localcacert: File.join(ssldir, 'certs', 'ca.pem'),
       hostcert: File.join(ssldir, 'certs', "#{certname}.pem"),
       hostprivkey: File.join(ssldir, 'private_keys', "#{certname}.pem"),

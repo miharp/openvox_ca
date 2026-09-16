@@ -16,7 +16,7 @@ The module is not on the Forge. To try a release, pin a git tag in your Puppetfi
 ```ruby
 mod 'openvox_ca',
   git: 'https://github.com/miharp/openvox_ca.git',
-  ref: 'v0.3.1'
+  ref: 'v0.4.0'
 ```
 
 ## Usage
@@ -36,11 +36,23 @@ elsewhere, for example with `--run-as root`.
 
 ```text
 STATUS   HOST                         KIND           EXPIRES      DAYS  SUBJECT
+expired  puppet.example.com           issued_cert    2026-08-30    -17  /CN=old-build.example.com
+warn     puppet.example.com           issued_cert    2026-11-02     47  /CN=agent07.example.com (revoked)
 ok       puppet.example.com           ca_cert        2031-09-12   1823  /CN=Puppet CA: puppet.example.com
 ok       puppet.example.com           crl            2031-09-12   1823  /CN=Puppet CA: puppet.example.com
 ok       agent01.example.com          host_cert      2031-09-12   1823  /CN=agent01.example.com
 ok       agent01.example.com          local_ca_copy  2031-09-12   1823  /CN=Puppet CA: puppet.example.com
+Issued certificates on puppet.example.com: 212 total, 1 due within 90 days, 1 expired, 3 revoked
 ```
+
+The CA check also audits every certificate the CA has issued, read from the CA's signed directory,
+so the whole fleet's expiry is visible from the CA host without an inventory. By default only the
+issued certificates that are due within `warn_days` or already expired are listed, one row each with
+kind `issued_cert`, and the summary line counts the whole directory. Pass `issued=all` to list every
+one, or `issued=none` to skip the directory. A certificate that is still in the signed directory but
+listed in the CA's CRL is marked `(revoked)`. Issued certificates never change the CA's own status,
+because an expiring agent certificate is not a reason to extend the CA; it is a reason to renew
+that agent's certificate.
 
 ### Extend the CA certificate
 
@@ -66,6 +78,15 @@ is not on the CA host. Otherwise it:
 5. refreshes OpenVoxDB's copies with `puppetdb ssl-setup -f` and restarts it, when it runs on the CA
    host (`restart_puppetdb=false` to skip);
 6. starts `puppetserver`, waits for it to answer, and reports the expiry before and after.
+
+The re-signing in step 2 is done by `puppetserver ca extend` when the CA CLI on the host has that
+subcommand, which is proposed in
+[openvoxserver-ca#56](https://github.com/OpenVoxProject/openvoxserver-ca/issues/56) and not yet
+released, and by the module's own implementation otherwise. The task probes for the subcommand
+with `puppetserver ca extend --help`, takes its own backups before calling it, and checks afterwards
+that every certificate kept its serial and key and moved its expiry. Pass `implementation=library`
+to never use the subcommand, or `implementation=gem` to insist on it. Until the subcommand ships,
+the gem path has only been exercised against a stand-in in the unit tests.
 
 Pass `ttl=<duration>` to choose a different lifetime, in the same format the CA gem accepts (`15y`,
 `400d`, `24h`). Pass `regen_primary_cert=true` when the server's own certificate has also expired:
@@ -106,18 +127,45 @@ The CA report also says which layout the bundle has (`single`, or `intermediate`
 signing certificate pair) and lists any CA certificate whose private key is not on disk, which
 means the CA was issued externally and cannot be extended here.
 
-## What it will do
+### Manage the agents' copy from a manifest instead
 
-An OpenVox CA certificate is valid for 15 years by default. When it expires, every TLS connection in the
-deployment fails at once. Rebuilding the CA is not necessary: re-signing the existing CA certificate with
-the same key and subject gives it a new validity period, and every host certificate the CA ever issued
-stays valid because the signing key has not changed. Only the CA certificate file changes, and the new
-copy then has to reach agents and anything else that pins the CA bundle.
+Before the old certificate expires, agents can still talk to the server, so the simplest way to put
+the new bundle on every agent sooner than `ca_refresh_interval` is a `file` resource in a profile
+that every agent applies. The content comes from the compiling server's own copy, so compilers
+must already hold the new bundle, which the extend plan does not do for separate compilers.
+
+```puppet
+# profile::ca_bundle: keep the agent's CA bundle in step with the server's.
+$localcacert = $facts['os']['family'] ? {
+  'windows' => 'C:/ProgramData/PuppetLabs/puppet/etc/ssl/certs/ca.pem',
+  default   => '/etc/puppetlabs/puppet/ssl/certs/ca.pem',
+}
+
+file { $localcacert:
+  ensure  => file,
+  content => file($settings::localcacert),
+}
+```
+
+This does not work once the old certificate has expired, because the agent can no longer fetch a
+catalog; use the distribute plan then. It also does nothing for hosts that pin the bundle outside
+the agent's SSL directory, such as an OpenVoxDB on its own host.
+
+## How it works
+
+An OpenVox CA certificate created by `puppetserver ca setup` is valid for 15 years. A CA the server
+generated on its own first start uses `ca_ttl` instead, which is five years by default, and has
+the single-certificate layout. Either way, when it expires every TLS connection in the deployment
+fails at once. Rebuilding the CA is not necessary: re-signing the existing CA certificate with the
+same key and subject gives it a new validity period, and every host certificate the CA ever issued
+stays valid because the signing key has not changed. Only the CA certificate file changes, and the
+new copy then has to reach agents and anything else that pins the CA bundle.
 
 This module provides OpenBolt plans for that lifecycle:
 
-- `openvox_ca::check`: report the expiry of the CA bundle, the CRLs, the server's own certificate, and
-  optionally every agent's certificate and CA copy. Read-only.
+- `openvox_ca::check`: report the expiry of the CA bundle, the CRLs, the server's own certificate,
+  every certificate the CA has issued, and optionally every agent's certificate and CA copy.
+  Read-only.
 - `openvox_ca::extend`: re-sign the CA certificate in place on the CA host, handling both the
   single-certificate layout and the root plus intermediate bundle that `puppetserver ca setup` creates by
   default. Refuses externally issued CAs.
@@ -125,12 +173,13 @@ This module provides OpenBolt plans for that lifecycle:
   by removing each agent's copy so the next run fetches it.
 
 The re-signing step itself is also proposed as a `puppetserver ca extend` subcommand in the OpenVox CA
-tooling; see [openvoxserver-ca#56](https://github.com/OpenVoxProject/openvoxserver-ca/issues/56). When
-that ships, the extend plan will prefer it and keep its own implementation as a fallback.
+tooling; see [openvoxserver-ca#56](https://github.com/OpenVoxProject/openvoxserver-ca/issues/56). The
+extend task already prefers that subcommand when it finds one and keeps its own implementation as the
+fallback. See [REFERENCE.md](REFERENCE.md) for every plan and task parameter.
 
 ## Testing against a lab
 
-`contrib/lab_battery.sh` runs 30 positive and negative cases against a disposable lab from the CA
+`contrib/lab_battery.sh` runs 31 positive and negative cases against a disposable lab from the CA
 host: the guards and refusals, both extend layouts of behaviour, both distribute strategies, a full
 expire-and-recover cycle, and a rollback from the backups. It rewrites the CA certificate and
 restarts every service, so never point it at a real deployment. See the header of the script for

@@ -9,8 +9,13 @@
 # expires, because the signing key has not changed. Distribute the new bundle
 # before that happens.
 #
+# The re-signing itself is done by `puppetserver ca extend` when the CA CLI on
+# the host has that subcommand, and by the module's own implementation
+# otherwise. Pass `implementation` to force one or the other.
+#
 # @param ca The CA host. Exactly one target.
 # @param ttl New lifetime for the CA certificate, in the CA gem's format.
+# @param implementation `auto` prefers `puppetserver ca extend` when present, `gem` requires it, `library` never uses it.
 # @param crls Which CRLs to re-sign: only expired ones, all, or none.
 # @param regen_primary_cert Also replace the CA host's own certificate, for when it has expired too.
 # @param dns_alt_names Subject alternative names for the regenerated host certificate.
@@ -22,6 +27,7 @@
 plan openvox_ca::extend (
   TargetSpec                  $ca,
   Pattern[/\A\d+[ydhms]?\z/]  $ttl                = '15y',
+  Enum[auto, gem, library]    $implementation     = 'auto',
   Enum[expired, all, none]    $crls               = 'expired',
   Boolean                     $regen_primary_cert = false,
   Optional[Array[String[1]]]  $dns_alt_names      = undef,
@@ -36,7 +42,7 @@ plan openvox_ca::extend (
   }
   $target = $ca_targets[0]
 
-  $before = run_task('openvox_ca::check_ca', $target, 'warn_days' => $warn_days).first.value
+  $before = run_task('openvox_ca::check_ca', $target, 'warn_days' => $warn_days, 'issued' => 'none').first.value
   $ca_items = $before['items'].filter |$i| { $i['kind'] == 'ca_cert' }
   out::message("CA on ${target.name}: layout ${before['layout']}, status ${before['status']}")
   $ca_items.each |$i| {
@@ -51,8 +57,8 @@ plan openvox_ca::extend (
   }
 
   if $dry_run {
-    $planned = run_task('openvox_ca::extend_ca', $target, 'ttl' => $ttl, 'crls' => $crls, 'dry_run' => true).first.value
-    out::message("Dry run: would re-sign ${planned['certificates'].length} certificate(s) to expire ${planned['not_after'][0, 10]}")
+    $planned = run_task('openvox_ca::extend_ca', $target, 'ttl' => $ttl, 'crls' => $crls, 'implementation' => $implementation, 'dry_run' => true).first.value
+    out::message("Dry run: would re-sign ${planned['certificates'].length} certificate(s) to expire ${planned['not_after'][0, 10]} using the ${planned['implementation']}")
     $planned['planned_writes'].each |$f| { out::message("  would write ${f}") }
     return({ 'before' => $before, 'extend' => $planned, 'after' => undef })
   }
@@ -60,7 +66,10 @@ plan openvox_ca::extend (
   out::message('Stopping puppetserver')
   run_command('systemctl stop puppetserver', $target)
 
-  $extend = run_task('openvox_ca::extend_ca', $target, 'ttl' => $ttl, 'crls' => $crls).first.value
+  $extend = run_task('openvox_ca::extend_ca', $target, 'ttl' => $ttl, 'crls' => $crls, 'implementation' => $implementation).first.value
+  if $extend['implementation'] == 'gem' {
+    out::message('  re-signed with puppetserver ca extend')
+  }
   $extend['certificates'].each |$c| {
     out::message("  re-signed ${c['subject']}: ${c['old_not_after'][0, 10]} -> ${c['new_not_after'][0, 10]}")
   }
@@ -94,7 +103,7 @@ plan openvox_ca::extend (
     fail_plan('puppetserver did not answer on port 8140 within three minutes after the restart', 'openvox_ca/server-not-up')
   }
 
-  $after = run_task('openvox_ca::check_ca', $target, 'warn_days' => $warn_days).first.value
+  $after = run_task('openvox_ca::check_ca', $target, 'warn_days' => $warn_days, 'issued' => 'none').first.value
   out::message("CA on ${target.name} after extend: status ${after['status']}")
   $after['items'].filter |$i| { $i['kind'] == 'ca_cert' }.each |$i| {
     out::message(sprintf('  %-8s expires %s (%d days)  %s', $i['status'], $i['not_after'][0, 10], $i['days_left'], $i['subject']))

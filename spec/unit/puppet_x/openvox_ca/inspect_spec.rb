@@ -86,6 +86,54 @@ describe PuppetX::OpenvoxCa::Inspect do
     end
   end
 
+  describe 'issued certificates' do
+    let(:layout) { CaFixtures.single_ca }
+
+    before do
+      CaFixtures.issue(layout, 'fresh.example.com', days: 365 * 4, serial: 100)
+      CaFixtures.issue(layout, 'soon.example.com', days: 30, serial: 101)
+      CaFixtures.issue(layout, 'gone.example.com', days: -1, serial: 102)
+      CaFixtures.issue(layout, 'revoked.example.com', days: 365, serial: 103, revoke: true)
+    end
+
+    after { FileUtils.rm_rf(layout.dir) }
+
+    it 'lists only the due and expired ones by default, with counts for the whole directory' do
+      report = inspect.ca_report(layout.settings, warn_days: 90)
+      issued = report['items'].select { |i| i['kind'] == 'issued_cert' }
+      expect(issued.map { |i| i['certname'] }).to eq(%w[gone.example.com soon.example.com])
+      expect(issued.map { |i| i['status'] }).to eq(%w[expired warn])
+      expect(report['issued']).to eq('total' => 5, 'ok' => 3, 'warn' => 1, 'expired' => 1, 'revoked' => 1)
+    end
+
+    it 'lists every issued certificate with issued: :all, including the server itself, and marks revoked ones' do
+      report = inspect.ca_report(layout.settings, warn_days: 90, issued: :all)
+      issued = report['items'].select { |i| i['kind'] == 'issued_cert' }
+      expect(issued.map { |i| i['certname'] }).to eq(%w[fresh.example.com gone.example.com puppet.example.com revoked.example.com soon.example.com])
+      expect(issued.find { |i| i['certname'] == 'revoked.example.com' }['revoked']).to be(true)
+      expect(issued.count { |i| i['revoked'] }).to eq(1)
+      expect(issued.first).not_to have_key('key_present')
+    end
+
+    it 'skips the directory with issued: :none' do
+      report = inspect.ca_report(layout.settings, warn_days: 90, issued: :none)
+      expect(report['items'].map { |i| i['kind'] }).not_to include('issued_cert')
+      expect(report['issued']).to be_nil
+    end
+
+    it 'does not let an expired issued certificate change the CA status or layout' do
+      report = inspect.ca_report(layout.settings, warn_days: 90, issued: :all)
+      expect(report['status']).to eq('ok')
+      expect(report['layout']).to eq('single')
+    end
+
+    it 'copes with a missing signed directory' do
+      FileUtils.rm_rf(layout.signeddir)
+      report = inspect.ca_report(layout.settings, warn_days: 90)
+      expect(report['issued']).to eq('total' => 0, 'ok' => 0, 'warn' => 0, 'expired' => 0, 'revoked' => 0)
+    end
+  end
+
   describe 'host report' do
     let(:layout) { CaFixtures.intermediate_ca }
     let(:report) { inspect.host_report(layout.settings, warn_days: 90) }

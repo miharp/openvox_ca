@@ -1,11 +1,16 @@
 {
-  "description": "Report the expiry of the CA certificate bundle, the CRLs, and the server's own certificate on the CA host. Read-only.",
+  "description": "Report the expiry of the CA certificate bundle, the CRLs, the server's own certificate, and the certificates the CA has issued, on the CA host. Read-only.",
   "input_method": "stdin",
   "parameters": {
     "warn_days": {
       "description": "Flag anything that expires within this many days.",
       "type": "Integer[0]",
       "default": 90
+    },
+    "issued": {
+      "description": "Which issued certificates from the CA's signed directory to list: only those due within warn_days or already expired, all of them, or none. Counts for the whole directory are always returned.",
+      "type": "Enum[due, all, none]",
+      "default": "due"
     },
     "section": {
       "description": "The puppet.conf section to resolve settings from.",

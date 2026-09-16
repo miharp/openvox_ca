@@ -9,9 +9,9 @@ require File.join(lib, 'inspect')
 require File.join(lib, 'puppet_settings')
 
 begin
-  names = %w[cadir cacert cakey rootkey cacrl localcacert hostcert hostcrl certname]
+  names = %w[cadir cacert cakey rootkey cacrl signeddir localcacert hostcert hostcrl certname]
   settings = PuppetX::OpenvoxCa::PuppetSettings.print(names, section: params.fetch('section', 'server'))
-  report = PuppetX::OpenvoxCa::Inspect.ca_report(settings, warn_days: params.fetch('warn_days', 90))
+  report = PuppetX::OpenvoxCa::Inspect.ca_report(settings, warn_days: params.fetch('warn_days', 90), issued: params.fetch('issued', 'due').to_sym)
   report['certname'] = settings['certname']
   puts JSON.generate(report)
 rescue PuppetX::OpenvoxCa::Inspect::MissingFiles => e
