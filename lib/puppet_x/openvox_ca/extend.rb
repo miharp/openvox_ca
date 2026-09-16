@@ -244,13 +244,20 @@ module PuppetX
       end
 
       # Moves each file to a fresh backup name beside the original. Returns
-      # path => backup, so the caller can move them back.
+      # path => backup, so the caller can move them back. All or nothing: if
+      # any file cannot be moved, the ones already moved are put back before
+      # the error is raised, so a caller never has to guess what moved.
       def move_aside(paths, now: Time.now)
-        paths.select { |p| File.exist?(p) }.to_h do |path|
+        moved = {}
+        paths.select { |p| File.exist?(p) }.each do |path|
           backup = backup_path(path, now: now)
           FileUtils.mv(path, backup)
-          [path, backup]
+          moved[path] = backup
         end
+        moved
+      rescue StandardError
+        moved.each { |path, backup| FileUtils.mv(backup, path) }
+        raise
       end
 
       # Backs up and replaces every affected file. Returns the paths written

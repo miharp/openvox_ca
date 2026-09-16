@@ -30,6 +30,10 @@ Fixes from an external review of v0.4.1, all about failure handling and false su
   so an unreachable fleet can no longer pass. Acceptance: the refetch assertion compares against
   the extended lifetime instead of a hard-coded year.
 
+Verified on the OpenVox 8 lab: 31 of 31, and two forced regeneration failures (one while moving the
+old files aside, one in `puppetserver ca generate` itself) left the server certificate and key
+untouched with `puppetserver` back up and the CA CLI still working.
+
 ## v0.4.1
 
 Do not use v0.4.0. Its probe for `puppetserver ca extend` asked the CLI for that action's help,

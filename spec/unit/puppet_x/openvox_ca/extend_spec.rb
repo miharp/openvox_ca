@@ -57,6 +57,20 @@ describe PuppetX::OpenvoxCa::Extend do
       expect(File.read(first['backups'].find { |b| b.start_with?(layout.cacert) })).to eq(original)
     end
 
+    it 'puts already-moved files back when a later one cannot be moved' do
+      locked = File.join(layout.dir, 'locked')
+      FileUtils.mkdir_p(locked)
+      File.write(File.join(locked, 'x.pem'), 'x')
+      File.chmod(0o555, locked)
+      begin
+        expect { extend.move_aside([layout.hostcert, File.join(locked, 'x.pem')], now: now) }.to raise_error(SystemCallError)
+        expect(File.exist?(layout.hostcert)).to be(true)
+        expect(Dir.glob("#{layout.hostcert}.*.bak")).to be_empty
+      ensure
+        File.chmod(0o755, locked)
+      end
+    end
+
     it 'moves files aside and reports where they went' do
       moved = extend.move_aside([layout.hostcert, File.join(layout.dir, 'absent.pem')], now: now)
       expect(moved.keys).to eq([layout.hostcert])
