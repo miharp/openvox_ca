@@ -19,7 +19,7 @@ describe 'openvox_ca::distribute' do
     expect_task('openvox_ca::remove_localcacert').with_targets(agents).with_params('trigger_run' => true, '_catch_errors' => true)
                                                  .always_return(distribute_result)
     expect_task('openvox_ca::upload_ca').not_be_called
-    expect_out_message.with_params(format('%-28s %-8s CA copy now expires %s', 'agent01.example.com', 'refetch', '2041-09-12'))
+    expect_out_message.with_params('agent01.example.com          refetch  CA copy now expires 2041-09-12')
 
     result = run_plan('openvox_ca::distribute', 'ca' => ca, 'targets' => agents)
     expect(result).to be_ok
@@ -42,7 +42,7 @@ describe 'openvox_ca::distribute' do
       'agent01.example.com' => distribute_result,
       'agent02.example.com' => { '_error' => { 'kind' => 'puppetlabs.tasks/connect-error', 'msg' => 'Connection refused', 'details' => {} } },
     )
-    expect_out_message.with_params(format('%-28s FAILED   %s', 'agent02.example.com', 'Connection refused'))
+    expect_out_message.with_params('agent02.example.com          FAILED   Connection refused')
 
     result = run_plan('openvox_ca::distribute', 'ca' => ca, 'targets' => agents)
     expect(result).not_to be_ok

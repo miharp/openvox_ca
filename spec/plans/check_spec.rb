@@ -28,7 +28,7 @@ describe 'openvox_ca::check' do
     expect_task('openvox_ca::check_ca').with_params('warn_days' => 90, 'issued' => 'due', 'section' => 'server')
                                        .always_return(ca_report(items: [ca_item, issued_item('agent07.example.com', revoked: true)],
                                                                 issued: { 'total' => 5, 'ok' => 4, 'warn' => 1, 'expired' => 0, 'revoked' => 1 }))
-    expect_out_message.with_params(format('%-8s %-28s %-14s %-10s %6d  %s', 'warn', 'puppet.example.com', 'issued_cert', '2026-11-02', 47, '/CN=agent07.example.com (revoked)'))
+    expect_out_message.with_params('warn     puppet.example.com           issued_cert    2026-11-02     47  /CN=agent07.example.com (revoked)')
 
     result = run_plan('openvox_ca::check', 'ca' => PlanFixtures::CA)
     expect(result).to be_ok
