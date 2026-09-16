@@ -207,6 +207,11 @@ gh pr create --fill
 gh pr merge --auto --merge
 ```
 
+Tests: `bundle exec rake spec` runs the unit specs for the Ruby libraries under `spec/unit` and the
+plan specs under `spec/plans`, which run the plans through BoltSpec with every task and command
+stubbed to check the guards, the order of steps, the parameters passed on, and the recovery when a
+step fails. `bundle exec rake beaker` runs the Beaker acceptance spec on an amd64 host with Docker.
+
 A release is a version bump and changelog entry merged the same way, followed by a signed tag on
 `main`: `git tag -s vX.Y.Z && git push origin vX.Y.Z`. The tag push builds the tarball and attaches
 it to a GitHub release. Run the lab battery before tagging anything that touches a plan or task.

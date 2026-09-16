@@ -6,6 +6,11 @@
 # when the module moves into an org that has those secrets.
 Gemfile:
   openvox_version: ['>= 8', '< 10']
+  optional:
+    ':test':
+      # BoltSpec::Plans for the plan specs under spec/plans.
+      - gem: openbolt
+        version: '~> 5.3'
 .github/workflows/release.yml:
   delete: true
 .github/workflows/prepare_release.yml:
