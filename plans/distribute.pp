@@ -42,7 +42,8 @@ plan openvox_ca::distribute (
 
   $results.each |$r| {
     if $r.ok {
-      $expiries = $r.value['items'].map |$i| { $i['not_after'][0, 10] }.unique.join(', ')
+      $copies = $r.value['items'].filter |$i| { $i['kind'] == 'local_ca_copy' }
+      $expiries = $copies.map |$i| { $i['not_after'][0, 10] }.unique.join(', ')
       out::message(sprintf('%-28s %-8s CA copy now expires %s', $r.target.name, $strategy, $expiries))
     } else {
       out::message(sprintf('%-28s FAILED   %s', $r.target.name, $r.error.message))

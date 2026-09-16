@@ -47,7 +47,7 @@ sums()         { sha256sum "$CADIR/ca_crt.pem" "$CADIR/ca_crl.pem" "$CADIR/infra
 # target was unreachable). agents_ok demands exactly AGENT_COUNT rows, every
 # one a bolt success with exit 0 or 2, so an unreachable agent or a broken
 # bolt run can never pass as "no failures".
-agent_runs()   { cmd "/opt/puppetlabs/bin/puppet agent -t --detailed-exitcodes >/dev/null 2>&1; echo \$?" "$AGENTS" | jq -r '.items[] | "\(.target) \(.status) \(.value.stdout // "none" | tostring | gsub("\s";""))"'; }
+agent_runs()   { cmd "/opt/puppetlabs/bin/puppet agent -t --detailed-exitcodes >/dev/null 2>&1; echo \$?" "$AGENTS" | jq -r '.items[] | "\(.target) \(.status) \(.value.stdout // "none" | tostring | rtrimstr("\n"))"'; }
 agents_ok()    { local rows n bad; rows=$(agent_runs) || { echo "agent run: bolt or jq failed"; return 1; }
   n=$(printf '%s\n' "$rows" | grep -c .); [ "$n" -eq "$AGENT_COUNT" ] || { echo "expected $AGENT_COUNT agent results, got $n: $rows"; return 1; }
   bad=$(printf '%s\n' "$rows" | awk '$2!="success" || ($3!="0" && $3!="2")'); [ -z "$bad" ] || { echo "$bad"; return 1; }; }
