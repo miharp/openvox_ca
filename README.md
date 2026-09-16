@@ -16,7 +16,7 @@ The module is not on the Forge. To try a release, pin a git tag in your Puppetfi
 ```ruby
 mod 'openvox_ca',
   git: 'https://github.com/miharp/openvox_ca.git',
-  ref: 'v0.4.0'
+  ref: 'v0.4.1'
 ```
 
 ## Usage
@@ -83,7 +83,7 @@ The re-signing in step 2 is done by `puppetserver ca extend` when the CA CLI on 
 subcommand, which is proposed in
 [openvoxserver-ca#56](https://github.com/OpenVoxProject/openvoxserver-ca/issues/56) and not yet
 released, and by the module's own implementation otherwise. The task probes for the subcommand
-with `puppetserver ca extend --help`, takes its own backups before calling it, and checks afterwards
+by looking for an `extend` action in `puppetserver ca --help`, takes its own backups before calling it, and checks afterwards
 that every certificate kept its serial and key and moved its expiry. Pass `implementation=library`
 to never use the subcommand, or `implementation=gem` to insist on it. Until the subcommand ships,
 the gem path has only been exercised against a stand-in in the unit tests.

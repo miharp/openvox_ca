@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.4.1
+
+Do not use v0.4.0. Its probe for `puppetserver ca extend` asked the CLI for that action's help,
+and the current CLI answers an unknown action with "Unknown action" plus the whole usage and exit
+code 0, so the probe saw `--ttl` in the usage and chose the gem path on every host; the extend
+task then failed after the plan had already stopped the server. The probe now looks for an
+`extend` entry in the CLI's action list, the stand-in in the unit specs reproduces the real
+CLI's behaviour, and the acceptance suite, which caught this, is green again.
+
+The extend plan also starts `puppetserver` again before failing when the extend task refuses or
+fails, instead of leaving the deployment down. The task's writes are backed up first, so the CA
+directory is either untouched or recoverable from the backups it printed.
+
 ## v0.4.0
 
 The check plan now audits every certificate the CA has issued, from the CA's signed directory, so

@@ -66,7 +66,17 @@ plan openvox_ca::extend (
   out::message('Stopping puppetserver')
   run_command('systemctl stop puppetserver', $target)
 
-  $extend = run_task('openvox_ca::extend_ca', $target, 'ttl' => $ttl, 'crls' => $crls, 'implementation' => $implementation).first.value
+  $extend_result = run_task('openvox_ca::extend_ca', $target, 'ttl' => $ttl, 'crls' => $crls, 'implementation' => $implementation, '_catch_errors' => true).first
+  unless $extend_result.ok {
+    # Do not leave the deployment down because the task refused or failed.
+    # Every file the task writes is backed up first, so the CA directory is
+    # either untouched or recoverable from the backups it printed.
+    out::message("extend_ca failed: ${$extend_result.error.message}")
+    out::message('Starting puppetserver again')
+    run_command('systemctl start puppetserver', $target, '_catch_errors' => true)
+    fail_plan($extend_result.error.message, $extend_result.error.kind)
+  }
+  $extend = $extend_result.value
   if $extend['implementation'] == 'gem' {
     out::message('  re-signed with puppetserver ca extend')
   }

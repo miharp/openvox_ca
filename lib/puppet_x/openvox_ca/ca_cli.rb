@@ -22,13 +22,19 @@ module PuppetX
     module CaCli
       module_function
 
-      # True when the CA CLI on this host has an `extend` subcommand that
-      # takes `--ttl`.
+      # True when the CA CLI on this host lists `extend` among its actions.
+      # The general usage is the only reliable signal: `puppetserver ca
+      # extend --help` on a CLI without the action prints "Unknown action"
+      # followed by the whole usage, which mentions `--ttl` for other actions,
+      # and still exits zero.
       def extend_available?(bin: Service.puppetserver_bin)
         return false unless bin
 
-        out, err, status = Open3.capture3(bin, 'ca', 'extend', '--help')
-        status.success? && (out + err).include?('--ttl')
+        out, err, status = Open3.capture3(bin, 'ca', '--help')
+        return false unless status.success?
+
+        text = out + err
+        !text.match?(%r{Unknown action}i) && text.lines.any? { |l| l.match?(%r{\A\s+extend(\s|\z)}) }
       rescue SystemCallError
         false
       end

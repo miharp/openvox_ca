@@ -7,10 +7,38 @@ require_relative '../../../../lib/puppet_x/openvox_ca/ca_cli'
 
 # The `puppetserver ca extend` subcommand is proposed, not released. These
 # specs run the wrapper against a stand-in that behaves the way the proposal
-# describes: `--help` mentions `--ttl`, and an extend re-signs the bundle with
-# the module's own library, re-signs only expired CRLs, and writes the CA
-# directory and the host's own copies without taking backups.
+# describes: the general usage lists `extend` among the actions, and an
+# extend re-signs the bundle with the module's own library, re-signs only
+# expired CRLs, and writes the CA directory and the host's own copies without
+# taking backups. The usage texts below are shaped like the real CLI's, which
+# lists actions as an indented name, a tab, and a description, and answers an
+# unknown action with "Unknown action" plus the whole usage and exit code 0.
 describe PuppetX::OpenvoxCa::CaCli do
+  def usage_without_extend
+    <<~TXT
+      Usage: puppetserver ca <action> [options]
+
+      Available Actions:
+
+        Certificate Actions (requires a running Puppet Server):
+
+          clean\tRevoke cert(s) and remove related files from CA
+          generate\tGenerate a new certificate signed by the CA
+          sign\tSign certificate request(s)
+
+        Administrative Actions (requires Puppet Server to be stopped):
+
+          setup\tSetup a self-signed CA chain for Puppet Server
+
+      Action Options:
+        generate:
+              --ttl TTL                    The time-to-live for each cert generated and signed
+    TXT
+  end
+
+  def usage_with_extend
+    usage_without_extend.sub("    setup\tSetup", "    extend\tRe-sign the CA certificate in place with a new validity period\n    setup\tSetup")
+  end
   let(:workdir) { Dir.mktmpdir('openvox_ca_cli') }
 
   def inspect
@@ -33,15 +61,17 @@ describe PuppetX::OpenvoxCa::CaCli do
     File.expand_path('../../../../lib/puppet_x/openvox_ca', __dir__)
   end
 
-  def write_fake(path, help: 'Usage: puppetserver ca extend [--ttl TTL] [--force]', fail_with: nil)
+  def write_fake(path, help: usage_with_extend, fail_with: nil)
+    has_extend = help.include?("extend\t")
     lines = [
       '#!/usr/bin/env ruby',
       'args = ARGV.dup',
-      'exit 1 unless args.shift(2) == %w[ca extend]',
-      "if args == ['--help']",
+      "if args == %w[ca --help] || args.include?('--help') || !#{has_extend}",
+      "  puts 'Unknown action: ' + args[1].to_s unless args == %w[ca --help]",
       "  puts #{help.inspect}",
       '  exit 0',
       'end',
+      'exit 1 unless args.shift(2) == %w[ca extend]',
       "require 'json'",
       "require ENV['FAKE_LIB'] + '/extend'",
       "File.write(ENV['FAKE_LOG'], args.join(' '))",
@@ -72,15 +102,24 @@ describe PuppetX::OpenvoxCa::CaCli do
   after { FileUtils.rm_rf(workdir) }
 
   describe '.extend_available?' do
-    it 'is true when the CLI answers --help for extend and mentions --ttl' do
+    it 'is true when the CLI lists extend among its actions' do
       expect(described_class.extend_available?(bin: write_fake(fake))).to be(true)
     end
 
-    it 'is false for a CLI without the subcommand, without --ttl, or without a binary at all' do
-      expect(described_class.extend_available?(bin: write_fake(fake, help: 'Unknown action: extend'))).to be(false)
-      expect(described_class.extend_available?(bin: write_fake(fake, help: 'Usage: puppetserver ca extend'))).to be(false)
+    it 'is false for the current CLI, whose usage mentions --ttl for other actions but has no extend action' do
+      expect(described_class.extend_available?(bin: write_fake(fake, help: usage_without_extend))).to be(false)
+    end
+
+    it 'is false without a usable binary' do
       expect(described_class.extend_available?(bin: File.join(workdir, 'nope'))).to be(false)
       expect(described_class.extend_available?(bin: nil)).to be(false)
+    end
+
+    it 'never runs the subcommand on a CLI without it, even when asked to extend' do
+      write_fake(fake, help: usage_without_extend)
+      layout = CaFixtures.single_ca
+      expect { with_env(layout) { described_class.extend(layout.settings, ttl: '15y', bin: fake) } }.to raise_error(extend::Error, %r{did not move the expiry})
+      FileUtils.rm_rf(layout.dir)
     end
   end
 
