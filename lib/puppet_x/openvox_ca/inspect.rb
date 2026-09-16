@@ -15,15 +15,27 @@ module PuppetX
 
       module_function
 
-      # Every certificate in a PEM file, in file order.
+      # Every certificate in a PEM file, in file order. Raises Malformed when
+      # the file holds none, so an empty or truncated file is never reported
+      # as healthy or copied over a good one.
       def certificates(path)
-        File.read(path).scan(CERT_PATTERN).map { |pem| OpenSSL::X509::Certificate.new(pem) }
+        certs = File.read(path).scan(CERT_PATTERN).map { |pem| OpenSSL::X509::Certificate.new(pem) }
+        raise Malformed, "#{path} holds no certificate" if certs.empty?
+
+        certs
       end
 
-      # Every CRL in a PEM file, in file order.
+      # Every CRL in a PEM file, in file order. Raises Malformed when the file
+      # holds none.
       def crls(path)
-        File.read(path).scan(CRL_PATTERN).map { |pem| OpenSSL::X509::CRL.new(pem) }
+        crls = File.read(path).scan(CRL_PATTERN).map { |pem| OpenSSL::X509::CRL.new(pem) }
+        raise Malformed, "#{path} holds no CRL" if crls.empty?
+
+        crls
       end
+
+      # Raised for a file that exists but holds nothing parseable.
+      class Malformed < StandardError; end
 
       # Private keys from the given paths, skipping paths that do not exist.
       # Returns a hash of path => key.

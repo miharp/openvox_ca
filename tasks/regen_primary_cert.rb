@@ -7,12 +7,14 @@ require 'fileutils'
 
 params = JSON.parse($stdin.read)
 lib = File.join(params['_installdir'], 'openvox_ca', 'lib', 'puppet_x', 'openvox_ca')
-%w[inspect puppet_settings service].each { |f| require File.join(lib, f) }
+%w[inspect extend puppet_settings service].each { |f| require File.join(lib, f) }
 
-def fail_task(message, kind)
-  puts JSON.generate({ '_error' => { 'msg' => message, 'kind' => kind, 'details' => {} } })
+def fail_task(message, kind, details = {})
+  puts JSON.generate({ '_error' => { 'msg' => message, 'kind' => kind, 'details' => details } })
   exit 1
 end
+
+moved = {}
 
 begin
   warning = PuppetX::OpenvoxCa::Service.refuse_if_running!(force: params.fetch('force', false))
@@ -30,14 +32,9 @@ begin
                 []
               end
 
-  stamp = Time.now.utc.strftime('%Y%m%dT%H%M%SZ')
   candidates = [settings['hostcert'], settings['hostprivkey'], settings['hostpubkey'], File.join(settings['signeddir'], "#{certname}.pem")]
-  backups = []
-  candidates.select { |p| File.exist?(p) }.each do |path|
-    backup = "#{path}.#{stamp}.bak"
-    FileUtils.mv(path, backup)
-    backups << backup
-  end
+  moved = PuppetX::OpenvoxCa::Extend.move_aside(candidates)
+  backups = moved.values
 
   cmd = [puppetserver, 'ca', 'generate', '--certname', certname, '--ca-client']
   alt_names = params['dns_alt_names']
@@ -47,6 +44,7 @@ begin
   raise "puppetserver ca generate failed: #{(out + err).strip}" unless status.success?
 
   fresh = PuppetX::OpenvoxCa::Inspect.certificates(settings['hostcert']).first
+  moved = {}
   puts JSON.generate({
                        'status' => 'changed',
                        'certname' => certname,
@@ -58,5 +56,22 @@ begin
                        'output' => out.strip,
                      })
 rescue StandardError => e
-  fail_task("#{e.class}: #{e.message}", 'openvox_ca/regen_primary_cert')
+  # Put the old certificate and key back so the host is no worse off than
+  # before the attempt; a failed generate leaves nothing usable behind.
+  restored = []
+  not_restored = []
+  moved.each do |original, backup|
+    next if File.exist?(original)
+
+    begin
+      FileUtils.mv(backup, original)
+      restored << original
+    rescue SystemCallError
+      not_restored << backup
+    end
+  end
+  message = "#{e.class}: #{e.message}"
+  message += ". Restored #{restored.join(', ')}" unless restored.empty?
+  message += ". Could not restore: #{not_restored.join(', ')}" unless not_restored.empty?
+  fail_task(message, 'openvox_ca/regen_primary_cert', { 'restored' => restored, 'not_restored' => not_restored })
 end

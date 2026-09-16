@@ -66,46 +66,62 @@ plan openvox_ca::extend (
   out::message('Stopping puppetserver')
   run_command('systemctl stop puppetserver', $target)
 
+  # Everything between the stop and the start is run with errors caught, so
+  # that whatever fails, puppetserver is started again before the plan
+  # fails. Each step runs only if the previous ones succeeded. Every file the
+  # tasks write is backed up first, so the CA directory is either untouched
+  # or recoverable from the backups they print.
   $extend_result = run_task('openvox_ca::extend_ca', $target, 'ttl' => $ttl, 'crls' => $crls, 'implementation' => $implementation, '_catch_errors' => true).first
-  unless $extend_result.ok {
-    # Do not leave the deployment down because the task refused or failed.
-    # Every file the task writes is backed up first, so the CA directory is
-    # either untouched or recoverable from the backups it printed.
-    out::message("extend_ca failed: ${$extend_result.error.message}")
-    out::message('Starting puppetserver again')
-    run_command('systemctl start puppetserver', $target, '_catch_errors' => true)
-    fail_plan($extend_result.error.message, $extend_result.error.kind)
+  if $extend_result.ok {
+    $extend = $extend_result.value
+    if $extend['implementation'] == 'gem' {
+      out::message('  re-signed with puppetserver ca extend')
+    }
+    $extend['certificates'].each |$c| {
+      out::message("  re-signed ${c['subject']}: ${c['old_not_after'][0, 10]} -> ${c['new_not_after'][0, 10]}")
+    }
+    $extend['crls'].filter |$c| { $c['resigned'] }.each |$c| {
+      out::message("  re-signed CRL from ${c['issuer']} in ${c['file']}")
+    }
+    $extend['backups'].each |$b| { out::message("  backup ${b}") }
+  } else {
+    $extend = undef
   }
-  $extend = $extend_result.value
-  if $extend['implementation'] == 'gem' {
-    out::message('  re-signed with puppetserver ca extend')
-  }
-  $extend['certificates'].each |$c| {
-    out::message("  re-signed ${c['subject']}: ${c['old_not_after'][0, 10]} -> ${c['new_not_after'][0, 10]}")
-  }
-  $extend['crls'].filter |$c| { $c['resigned'] }.each |$c| {
-    out::message("  re-signed CRL from ${c['issuer']} in ${c['file']}")
-  }
-  $extend['backups'].each |$b| { out::message("  backup ${b}") }
 
-  if $regen_primary_cert {
-    $regen = run_task('openvox_ca::regen_primary_cert', $target, 'dns_alt_names' => $dns_alt_names).first.value
+  $regen_result = if $extend_result.ok and $regen_primary_cert {
+    run_task('openvox_ca::regen_primary_cert', $target, 'dns_alt_names' => $dns_alt_names, '_catch_errors' => true).first
+  } else {
+    undef
+  }
+  if $regen_result =~ NotUndef and $regen_result.ok {
+    $regen = $regen_result.value
     out::message("  regenerated ${regen['certname']} certificate, expires ${regen['not_after'][0, 10]}")
     unless $regen['old_alt_names'].empty {
       out::message("  old certificate had alt names: ${regen['old_alt_names'].join(', ')}")
     }
   }
 
-  if $restart_puppetdb {
-    $pdb = run_task('openvox_ca::refresh_puppetdb_ssl', $target).first.value
-    if $pdb['present'] {
-      out::message('Refreshed OpenVoxDB SSL files, restarting puppetdb')
-      run_command('systemctl restart puppetdb', $target)
-    }
+  $pdb_result = if $extend_result.ok and ($regen_result =~ Undef or $regen_result.ok) and $restart_puppetdb {
+    run_task('openvox_ca::refresh_puppetdb_ssl', $target, '_catch_errors' => true).first
+  } else {
+    undef
+  }
+  $pdb_restart_result = if $pdb_result =~ NotUndef and $pdb_result.ok and $pdb_result.value['present'] {
+    out::message('Refreshed OpenVoxDB SSL files, restarting puppetdb')
+    run_command('systemctl restart puppetdb', $target, '_catch_errors' => true).first
+  } else {
+    undef
   }
 
+  $failed = [$extend_result, $regen_result, $pdb_result, $pdb_restart_result].filter |$r| { $r =~ NotUndef and !$r.ok }
+
   out::message('Starting puppetserver')
-  run_command('systemctl start puppetserver', $target)
+  run_command('systemctl start puppetserver', $target, '_catch_errors' => !$failed.empty)
+  unless $failed.empty {
+    $error = $failed[0].error
+    out::message("Failed: ${error.message}")
+    fail_plan($error.message, $error.kind, $error.details)
+  }
   $up = ctrl::do_until({ 'limit' => 36, 'interval' => 5 }) || {
     run_command('curl -sSf --insecure https://127.0.0.1:8140/status/v1/simple', $target, '_catch_errors' => true).ok
   }

@@ -16,7 +16,15 @@ begin
   report = PuppetX::OpenvoxCa::Distribute.install(settings, bundle, crl)
   restarted = false
   if params.fetch('restart_agent', true) && PuppetX::OpenvoxCa::Service.systemctl && PuppetX::OpenvoxCa::Service.active?('puppet')
-    Open3.capture3(PuppetX::OpenvoxCa::Service.systemctl, 'restart', 'puppet')
+    out, err, status = Open3.capture3(PuppetX::OpenvoxCa::Service.systemctl, 'restart', 'puppet')
+    unless status.success?
+      puts JSON.generate({ '_error' => {
+                           'msg' => "The bundle was installed but restarting the puppet service failed: #{(out + err).strip}",
+                           'kind' => 'openvox_ca/agent-restart',
+                           'details' => report.merge('agent_restarted' => false),
+                         } })
+      exit 1
+    end
     restarted = true
   end
   puts JSON.generate(report.merge('status' => 'changed', 'certname' => settings['certname'], 'agent_restarted' => restarted))

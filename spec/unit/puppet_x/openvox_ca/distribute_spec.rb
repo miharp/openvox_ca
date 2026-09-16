@@ -23,6 +23,13 @@ describe PuppetX::OpenvoxCa::Distribute do
       expect(report['items'].map { |i| i['subject'] }).to eq(['/CN=Puppet CA: puppet.example.com', '/CN=Puppet Root CA: 0123456789abcdef'])
     end
 
+    it 'refuses a CRL that holds no CRL, leaving the old one in place' do
+      before = File.read(agent.hostcrl)
+      expect { described_class.install(agent.settings, File.read(layout.cacert), 'not a CRL') }.to raise_error(described_class::Error, %r{holds no CRL})
+      expect(File.read(agent.hostcrl)).to eq(before)
+      expect(File.read(agent.localcacert)).not_to eq(File.read(layout.cacert))
+    end
+
     it 'refuses an empty or unparsable bundle without touching anything' do
       before = File.read(agent.localcacert)
       expect { described_class.install(agent.settings, 'not a certificate') }.to raise_error(described_class::Error)
@@ -32,9 +39,10 @@ describe PuppetX::OpenvoxCa::Distribute do
   end
 
   describe '.remove' do
-    it 'moves the bundle and CRL aside' do
+    it 'moves the bundle and CRL aside and says which files it removed' do
       report = described_class.remove(agent.settings)
       expect(report['backups'].length).to eq(2)
+      expect(report['removed']).to contain_exactly(agent.localcacert, agent.hostcrl)
       expect(File.exist?(agent.localcacert)).to be(false)
       expect(File.exist?(agent.hostcrl)).to be(false)
       expect(report['backups']).to all(satisfy { |b| File.exist?(b) })

@@ -145,9 +145,15 @@ describe PuppetX::OpenvoxCa::CaCli do
       expect(result['output']).to start_with('Extended the CA certificate')
     end
 
-    it 'passes --force through' do
-      with_env(layout) { described_class.extend(layout.settings, ttl: '400d', force: true, bin: fake) }
+    it 'passes --force through and accepts a TTL shorter than the old lifetime' do
+      result = with_env(layout) { described_class.extend(layout.settings, ttl: '400d', force: true, bin: fake) }
       expect(File.read(log)).to eq('--ttl 400d --force')
+      expect(Time.parse(result['not_after'])).to be_within(60 * 60).of(Time.now + (400 * 24 * 60 * 60))
+    end
+
+    it 'rejects an expiry that does not match the requested TTL' do
+      File.write(fake, "#!/usr/bin/env ruby\nrequire 'json'\nrequire ENV['FAKE_LIB'] + '/extend'\ns = JSON.parse(File.read(ENV['FAKE_SETTINGS']))\nr = PuppetX::OpenvoxCa::Extend.compute(s, ttl_seconds: 3 * 365 * 86_400)\nPuppetX::OpenvoxCa::Extend.planned_writes(s, r).each { |p, c| PuppetX::OpenvoxCa::Extend.write_atomically(p, c) }\n")
+      expect { with_env(layout) { described_class.extend(layout.settings, ttl: '15y', bin: fake) } }.to raise_error(extend::Error, %r{expected about})
     end
 
     it 'takes its own backups of every affected file before calling the subcommand' do

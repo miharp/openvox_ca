@@ -59,7 +59,7 @@ module PuppetX
         raise Extend::Error, "puppetserver ca extend failed: #{(out + err).strip}" unless status.success?
 
         after = Extend.analyse(settings)
-        certificates = verify_resigned!(before, after)
+        certificates = verify_resigned!(before, after, expected: now + Extend.parse_ttl(ttl))
         not_after = after.first[:cert].not_after
 
         resign_crls_all!(settings, after, now, not_after) if crls == :all
@@ -77,16 +77,23 @@ module PuppetX
         }
       end
 
+      # How far the gem's expiry may sit from now plus the requested TTL: the
+      # gem takes its own clock reading a few seconds after ours.
+      EXPIRY_TOLERANCE = 60 * 60
+
       # Raises unless the gem re-signed every certificate with the same serial
-      # and public key and a later expiry. Returns the per-certificate summary.
-      def verify_resigned!(before, after)
+      # and public key and an expiry at the requested lifetime. A shorter TTL
+      # than the old one is allowed, as it is with the library. Returns the
+      # per-certificate summary.
+      def verify_resigned!(before, after, expected:)
         raise Extend::Error, "puppetserver ca extend changed the number of certificates in the bundle from #{before.length} to #{after.length}" unless before.length == after.length
 
         before.zip(after).map do |old, fresh|
           oc = old[:cert]
           nc = fresh[:cert]
           raise Extend::Error, "puppetserver ca extend replaced #{oc.subject} with a different certificate" unless oc.serial == nc.serial && oc.public_key.to_der == nc.public_key.to_der
-          raise Extend::Error, "puppetserver ca extend did not move the expiry of #{oc.subject} (still #{oc.not_after.utc.iso8601})" unless nc.not_after > oc.not_after
+          raise Extend::Error, "puppetserver ca extend did not move the expiry of #{oc.subject} (still #{oc.not_after.utc.iso8601})" if nc.not_after == oc.not_after
+          raise Extend::Error, "puppetserver ca extend set the expiry of #{oc.subject} to #{nc.not_after.utc.iso8601}, expected about #{expected.utc.iso8601}" if (nc.not_after - expected).abs > EXPIRY_TOLERANCE
 
           {
             'subject' => nc.subject.to_s,

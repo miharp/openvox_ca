@@ -215,14 +215,41 @@ module PuppetX
         paths.compact.uniq.select { |p| File.exist?(p) }
       end
 
-      # Copies each file to `<file>.<timestamp>.bak` beside the original,
+      # A backup name for `path` that no file holds yet: `<file>.<timestamp>.bak`,
+      # or `<file>.<timestamp>-N.bak` when that name is taken. The name is
+      # claimed by exclusive creation, so two operations in the same second
+      # never overwrite each other's copy.
+      def backup_path(path, now: Time.now)
+        stamp = now.utc.strftime('%Y%m%dT%H%M%SZ')
+        ([''] + (1..999).map { |i| "-#{i}" }).each do |suffix|
+          name = "#{path}.#{stamp}#{suffix}.bak"
+          begin
+            File.open(name, File::WRONLY | File::CREAT | File::EXCL) { nil }
+            return name
+          rescue Errno::EEXIST
+            next
+          end
+        end
+        raise Error, "No free backup name for #{path}"
+      end
+
+      # Copies each file to a fresh backup name beside the original,
       # preserving mode and ownership. Returns the backup paths.
       def backup(paths, now: Time.now)
-        stamp = now.utc.strftime('%Y%m%dT%H%M%SZ')
         paths.select { |p| File.exist?(p) }.map do |path|
-          backup = "#{path}.#{stamp}.bak"
+          backup = backup_path(path, now: now)
           FileUtils.cp(path, backup, preserve: true)
           backup
+        end
+      end
+
+      # Moves each file to a fresh backup name beside the original. Returns
+      # path => backup, so the caller can move them back.
+      def move_aside(paths, now: Time.now)
+        paths.select { |p| File.exist?(p) }.to_h do |path|
+          backup = backup_path(path, now: now)
+          FileUtils.mv(path, backup)
+          [path, backup]
         end
       end
 

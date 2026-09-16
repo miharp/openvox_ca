@@ -166,6 +166,27 @@ describe PuppetX::OpenvoxCa::Inspect do
     end
   end
 
+  describe 'malformed files' do
+    let(:layout) { CaFixtures.single_ca }
+
+    after { FileUtils.rm_rf(layout.dir) }
+
+    it 'refuses to call an empty host certificate healthy' do
+      File.write(layout.hostcert, '')
+      expect { inspect.host_report(layout.settings) }.to raise_error(described_class::Malformed, %r{holds no certificate})
+    end
+
+    it 'refuses an empty CA bundle' do
+      File.write(layout.cacert, '')
+      expect { inspect.ca_report(layout.settings) }.to raise_error(described_class::Malformed, %r{holds no certificate})
+    end
+
+    it 'refuses a truncated CRL' do
+      File.write(layout.cacrl, "-----BEGIN X509 CRL-----\ntruncated")
+      expect { inspect.ca_report(layout.settings) }.to raise_error(described_class::Malformed, %r{holds no CRL})
+    end
+  end
+
   describe '.overall_status' do
     it 'ranks expired over warn over ok' do
       expect(inspect.overall_status([{ 'status' => 'ok' }, { 'status' => 'warn' }])).to eq('warn')

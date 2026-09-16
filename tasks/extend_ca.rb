@@ -20,11 +20,15 @@ begin
   crls = params.fetch('crls', 'expired').to_sym
   warning = dry_run ? nil : PuppetX::OpenvoxCa::Service.refuse_if_running!(force: force)
 
+  # The gem's extend re-signs expired CRLs on its own, so crls=none is only
+  # possible with the library.
   use_gem = case params.fetch('implementation', 'auto')
             when 'library' then false
             when 'gem'
+              raise PuppetX::OpenvoxCa::Extend::Error, 'crls=none cannot be honoured by puppetserver ca extend; use implementation=library' if crls == :none
+
               PuppetX::OpenvoxCa::CaCli.extend_available? || raise(PuppetX::OpenvoxCa::Extend::Error, 'puppetserver ca extend is not available on this host; use implementation=auto or library')
-            else PuppetX::OpenvoxCa::CaCli.extend_available?
+            else crls != :none && PuppetX::OpenvoxCa::CaCli.extend_available?
             end
 
   names = %w[cadir cacert cakey rootkey cacrl localcacert hostcert hostcrl certname]

@@ -18,6 +18,7 @@ CA_TARGET=${CA_TARGET:-localhost}
 AGENTS=${AGENTS:-agents}
 AGENT1=${AGENT1:-agent01.example.com}
 AGENT2=${AGENT2:-agent02.example.com}
+AGENT_COUNT=${AGENT_COUNT:-2}
 RUN_AS=${RUN_AS:---run-as root}
 CADIR=$(puppet config print --section server cadir)
 CERTNAME=$(puppet config print --section server certname)
@@ -42,8 +43,14 @@ ca_not_after() { openssl x509 -in "$CADIR/ca_crt.pem" -noout -enddate | cut -d= 
 ca_epoch()     { date -d "$(ca_not_after)" +%s; }
 crl_number()   { openssl crl -in "$CADIR/ca_crl.pem" -noout -text | awk '/X509v3 CRL Number/{getline; gsub(/ /,""); print; exit}'; }
 sums()         { sha256sum "$CADIR/ca_crt.pem" "$CADIR/ca_crl.pem" "$CADIR/infra_crl.pem" "$LOCALCACERT" | awk '{print $1}' | tr '\n' ' '; }
-agent_runs()   { cmd "/opt/puppetlabs/bin/puppet agent -t --detailed-exitcodes >/dev/null 2>&1; echo \$?" "$AGENTS" | jq -r '.items[] | "\(.target) \(.value.stdout|tonumber)"'; }
-agents_ok()    { local bad; bad=$(agent_runs | awk '$2!=0 && $2!=2'); [ -z "$bad" ] || { echo "$bad"; return 1; }; }
+# One row per target: name, bolt status, agent exit code (or "none" when the
+# target was unreachable). agents_ok demands exactly AGENT_COUNT rows, every
+# one a bolt success with exit 0 or 2, so an unreachable agent or a broken
+# bolt run can never pass as "no failures".
+agent_runs()   { cmd "/opt/puppetlabs/bin/puppet agent -t --detailed-exitcodes >/dev/null 2>&1; echo \$?" "$AGENTS" | jq -r '.items[] | "\(.target) \(.status) \(.value.stdout // "none" | tostring | gsub("\s";""))"'; }
+agents_ok()    { local rows n bad; rows=$(agent_runs) || { echo "agent run: bolt or jq failed"; return 1; }
+  n=$(printf '%s\n' "$rows" | grep -c .); [ "$n" -eq "$AGENT_COUNT" ] || { echo "expected $AGENT_COUNT agent results, got $n: $rows"; return 1; }
+  bad=$(printf '%s\n' "$rows" | awk '$2!="success" || ($3!="0" && $3!="2")'); [ -z "$bad" ] || { echo "$bad"; return 1; }; }
 unit_started() { cmd "systemctl show -p ActiveEnterTimestamp $1 | cut -d= -f2" "$2" | jq -r '.items[0].value.stdout'; }
 wait_server()  { for _ in $(seq 1 36); do curl -sSf --insecure https://127.0.0.1:8140/status/v1/simple >/dev/null 2>&1 && return 0; sleep 5; done; return 1; }
 near()         { local a=$1 b=$2 tol=$3; [ $(( a > b ? a - b : b - a )) -le "$tol" ]; }

@@ -24,7 +24,12 @@ module PuppetX
         raise Error, 'The bundle holds no certificates' if certs.empty?
 
         certs.each { |pem| OpenSSL::X509::Certificate.new(pem) }
-        crl_pem.to_s.scan(Inspect::CRL_PATTERN).each { |pem| OpenSSL::X509::CRL.new(pem) } if crl_pem
+        if crl_pem
+          crls = crl_pem.to_s.scan(Inspect::CRL_PATTERN)
+          raise Error, 'The CRL holds no CRL' if crls.empty?
+
+          crls.each { |pem| OpenSSL::X509::CRL.new(pem) }
+        end
 
         writes = { settings['localcacert'] => bundle_pem }
         writes[settings['hostcrl']] = crl_pem if crl_pem && settings['hostcrl']
@@ -35,29 +40,14 @@ module PuppetX
       # Moves `localcacert` and `hostcrl` aside so the agent fetches new copies
       # on its next run. Returns the backups made.
       def remove(settings, now: Time.now)
-        stamp = now.utc.strftime('%Y%m%dT%H%M%SZ')
-        backups = [settings['localcacert'], settings['hostcrl']].compact.select { |p| File.exist?(p) }.map do |path|
-          backup = "#{path}.#{stamp}.bak"
-          FileUtils.mv(path, backup)
-          backup
-        end
-        { 'backups' => backups }
+        moved = Extend.move_aside([settings['localcacert'], settings['hostcrl']].compact, now: now)
+        { 'backups' => moved.values, 'removed' => moved.keys }
       end
 
       def write_all(writes, now)
-        stamp = now.utc.strftime('%Y%m%dT%H%M%SZ')
-        written = []
-        backups = []
-        writes.each do |path, content|
-          if File.exist?(path)
-            backup = "#{path}.#{stamp}.bak"
-            FileUtils.cp(path, backup, preserve: true)
-            backups << backup
-          end
-          Extend.write_atomically(path, content)
-          written << path
-        end
-        { 'written' => written, 'backups' => backups }
+        backups = Extend.backup(writes.keys, now: now)
+        writes.each { |path, content| Extend.write_atomically(path, content) }
+        { 'written' => writes.keys, 'backups' => backups }
       end
     end
   end

@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.4.2
+
+Fixes from an external review of v0.4.1, all about failure handling and false success:
+
+- The extend plan now catches a failure of any step between stopping and starting `puppetserver`
+  (the extend task, the server certificate regeneration, the OpenVoxDB refresh and restart) and
+  starts the server again before failing. Only the extend task was covered before.
+- `regen_primary_cert` puts the old certificate, key, and signed copy back when
+  `puppetserver ca generate` fails, and names what it restored in the error.
+- A certificate or CRL file that exists but holds no parseable object is now an error everywhere:
+  the checks no longer report an empty file as `ok`, an extend refuses a truncated CRL instead of
+  writing empty CRL files, and `upload_ca` refuses a CRL parameter that holds no CRL instead of
+  writing it over the agent's copy.
+- `remove_localcacert` only reports `fetched` when every file it removed, bundle and CRL, is back
+  and parses. A run that fails later for other reasons is still not a distribution failure.
+- `upload_ca` fails with `openvox_ca/agent-restart` when the agent service restart fails, with the
+  installed files and backups in the error details, instead of reporting the restart as done.
+- The extend task keeps `crls=none` off the gem path, since `puppetserver ca extend` re-signs
+  expired CRLs on its own: `auto` uses the library, `gem` is refused before anything changes. The
+  gem wrapper also checks the new expiry against the requested TTL instead of demanding a later
+  one, so a shorter lifetime works the same way with either implementation.
+- Backup names are claimed by exclusive creation and get a `-N` suffix on collision, so two
+  operations in the same second no longer overwrite each other's copy. Shared by extend,
+  distribute, and regeneration.
+- Lab battery: the agent check now requires a result for every agent and a successful bolt run,
+  so an unreachable fleet can no longer pass. Acceptance: the refetch assertion compares against
+  the extended lifetime instead of a hard-coded year.
+
 ## v0.4.1
 
 Do not use v0.4.0. Its probe for `puppetserver ca extend` asked the CLI for that action's help,

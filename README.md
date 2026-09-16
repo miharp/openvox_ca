@@ -17,7 +17,7 @@ The module is not on the Forge. To try a release, pin a git tag in your Puppetfi
 ```ruby
 mod 'openvox_ca',
   git: 'https://github.com/miharp/openvox_ca.git',
-  ref: 'v0.4.1'
+  ref: 'v0.4.2'
 ```
 
 ## Usage
@@ -75,10 +75,15 @@ is not on the CA host. Otherwise it:
    them alone), keeping the revoked entries and incrementing `crlNumber`. OpenVox Server also renews
    its own CRL whenever it is within 30 days of expiry, so this step usually finds nothing to do;
 4. writes the new bundle and CRLs to the CA directory and to the server's own SSL directory, after
-   backing each file up as `<file>.<timestamp>.bak` beside the original;
+   backing each file up as `<file>.<timestamp>.bak` beside the original (`<file>.<timestamp>-N.bak`
+   when that name is already taken, so no backup is ever overwritten);
 5. refreshes OpenVoxDB's copies with `puppetdb ssl-setup -f` and restarts it, when it runs on the CA
    host (`restart_puppetdb=false` to skip);
 6. starts `puppetserver`, waits for it to answer, and reports the expiry before and after.
+
+If any step between the stop and the start fails, the plan starts `puppetserver` again before it
+fails, so a refusal or a broken step never leaves the deployment down. A failed server certificate
+regeneration puts the old certificate and key back.
 
 The re-signing in step 2 is done by `puppetserver ca extend` when the CA CLI on the host has that
 subcommand, which is proposed in

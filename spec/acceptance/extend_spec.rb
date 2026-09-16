@@ -88,7 +88,8 @@ describe 'extending an expired CA' do
     expect(code).to eq(0)
     expect(report['fetched']).to be(true)
     expect(report['backups'].length).to eq(2)
-    expect(report['items'].first['not_after']).to match(%r{^2031-})
+    # The CA was extended above with a five-year TTL; the refetched copy must carry that expiry.
+    expect(Time.parse(report['items'].first['not_after'])).to be_within(60 * 60).of(Time.now + (5 * 365 * 24 * 60 * 60))
   end
 
   it 'installs an uploaded bundle' do

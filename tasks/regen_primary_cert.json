@@ -15,6 +15,7 @@
   "files": [
     "openvox_ca/lib/puppet_x/openvox_ca/inspect.rb",
     "openvox_ca/lib/puppet_x/openvox_ca/puppet_settings.rb",
-    "openvox_ca/lib/puppet_x/openvox_ca/service.rb"
+    "openvox_ca/lib/puppet_x/openvox_ca/service.rb",
+    "openvox_ca/lib/puppet_x/openvox_ca/extend.rb"
   ]
 }

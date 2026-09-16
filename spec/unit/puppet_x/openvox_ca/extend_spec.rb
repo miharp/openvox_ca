@@ -43,6 +43,28 @@ describe PuppetX::OpenvoxCa::Extend do
     end
   end
 
+  describe '.backup' do
+    let(:layout) { CaFixtures.single_ca }
+
+    after { FileUtils.rm_rf(layout.dir) }
+
+    it 'never reuses a backup name within the same second' do
+      original = File.read(layout.cacert)
+      first = extend.apply(layout.settings, extend.compute(layout.settings, ttl_seconds: ttl, now: now), now: now)
+      second = extend.apply(layout.settings, extend.compute(layout.settings, ttl_seconds: ttl * 2, now: now), now: now)
+      expect(first['backups'] & second['backups']).to be_empty
+      expect(second['backups'].first).to match(%r{\.\d{8}T\d{6}Z-1\.bak\z})
+      expect(File.read(first['backups'].find { |b| b.start_with?(layout.cacert) })).to eq(original)
+    end
+
+    it 'moves files aside and reports where they went' do
+      moved = extend.move_aside([layout.hostcert, File.join(layout.dir, 'absent.pem')], now: now)
+      expect(moved.keys).to eq([layout.hostcert])
+      expect(File.exist?(layout.hostcert)).to be(false)
+      expect(File.exist?(moved[layout.hostcert])).to be(true)
+    end
+  end
+
   describe 'single-certificate layout' do
     let(:layout) { CaFixtures.single_ca(ca_days: 20, revoked: [7]) }
     let(:old) { inspect.certificates(layout.cacert).first }
